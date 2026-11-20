@@ -93,7 +93,7 @@ Bearer and paste an AI connection token. With **MCP**: add an MCP (Streamable HT
 connection with the MCP server address and the token as a Bearer key.
 
 If the manager still has its self-signed certificate, Open WebUI refuses it. Either
-put a trusted certificate on the manager (**Settings → TLS Certificate**), or give
+put a trusted certificate on the manager (**Settings → Certificate**), or give
 Open WebUI the manager's certificate: mount it into the container and set
 `AIOHTTP_CLIENT_SESSION_TOOL_SERVER_SSL` to its path. That setting covers both its
 OpenAPI and MCP connections.

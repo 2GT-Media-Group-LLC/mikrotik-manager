@@ -93,9 +93,9 @@ answering on `192.168.88.1` would collide.
 ## The borrowed device
 
 It gets one temporary IP address, and that is all. It is removed on every path out of the
-operation, including failures and refusals. Anything temporary is tagged, and
-**Devices → Discover → Clean up** sweeps for leftovers should the process ever be killed
-mid-flight.
+operation, including failures and refusals. Anything temporary is tagged, so leftovers can be
+swept should the process ever be killed mid-flight: an operator or admin with fleet-wide access
+can call `POST /api/adoption/cleanup` (there is no button for it yet).
 
 ## Security
 

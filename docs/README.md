@@ -5,7 +5,7 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 
 | Document | Covers |
 |---|---|
-| [Release notes (1.0)](release-notes.md) | What 1.0 includes, upgrading from a beta, release channels, known issues |
+| [Release notes](release-notes.md) | What's new in 1.1, upgrading from 1.0, and every release since 1.0 |
 | [Configuration](configuration.md) | Environment variables, secret management and key rotation |
 | [Devices](devices.md) | The device list, the tabs on a device, ports and VLANs, and the per-device tools |
 | [Clients](clients.md) | Where client data comes from, identification, history, and per-port clients |
@@ -15,7 +15,7 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 | [Sessions](sessions.md) | One row per connection from NetFlow: client, server, NAT, bytes each way, how it ended |
 | [Wireless](wireless.md) | Radios and SSIDs, RF health, signal bands, rogue APs, guest WiFi |
 | [Antenna aligner](antenna-aligner.md) | Wireless Systems, live signal from both ends of a PTP link and alignment tone |
-| [Network services](network-services.md) | DHCP, DNS, NTP, WireGuard, logging, discovery and SNMP |
+| [Network services](network-services.md) | DHCP, DNS, NTP, WireGuard, routing, tunnels and PPP, MLAG, Netinstall, logging, discovery and SNMP |
 | [Adopting devices](adoption.md) | Adding configured devices, and configuring factory-default ones so they can be managed |
 | [Sites](sites.md) | Grouping devices into sites, switching between them, and what each site scopes |
 | [Change Guard and Config Health](change-guard.md) | How the safety system works, its settings, and what to expect when it fires |
@@ -30,6 +30,8 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 | [Bulk commands](commands.md) | Running one command across a fleet, in waves |
 | [Firmware rollouts](firmware.md) | Waves, the upgrade pipeline, and what upgrading several at once costs |
 | [Backups](backups.md) | Finding, reading, comparing and deleting configuration backups |
+| [Backing up MikroTik Manager](platform-backup.md) | Backing up the manager itself, schedules, destinations, and restoring |
+| [Device certificates](certificates.md) | The manager's own CA, issuing and renewing device certificates, trusting the CA, and the reverse proxy |
 | [Polling and scaling](scaling.md) | Poller health, headroom, tuning, and clearing a backlog |
 | [API and automation](api.md) | Scoped tokens, authentication, and driving the platform from scripts |
 | [AI connections](ai-connections.md) | Read-only fleet review for AI tools, over MCP or OpenAPI, with a token or your identity provider |

@@ -1,6 +1,6 @@
 # Backing up MikroTik Manager
 
-**Settings → Backup & Restore** (admins only) backs up MikroTik Manager itself, so you can
+**Settings → Backup & Restore** (fleet admins; fleet operators see it read-only) backs up MikroTik Manager itself, so you can
 restore it after a mistake or move it to a new server. This is separate from
 [device backups](backups.md), which back up your routers and switches.
 

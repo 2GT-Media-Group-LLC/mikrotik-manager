@@ -2,6 +2,10 @@
 
 [← Documentation index](README.md)
 
+Alert rules, channels, outbound webhooks and scheduled reports are under **Settings → Alerting**
+and **Settings → Automation**. Changing them needs a fleet admin; fleet operators see them
+read-only (before 1.1, operators could change them too).
+
 ## Alert rules
 
 Each rule can be enabled independently, with its own threshold where applicable and a
@@ -143,7 +147,7 @@ Certificates on each device are read on the slow poll and checked hourly. The
 (14 by default) and its **cooldown** how often you are told about the same certificate
 (daily by default).
 
-It is **off by default** — turn it on in Settings → Alerts.
+It is **off by default** — turn it on in **Settings → Alerting**.
 
 Every certificate is tracked separately, so a device with an expiring CA and an expiring
 client certificate raises two alerts rather than one. A certificate authority is named as
@@ -200,7 +204,7 @@ certificate.
 ## Delivery channels
 
 Email, Slack, Discord, Telegram, **ntfy** and **Gotify**. Channels are configured under
-**Settings → Alerts → Channels**; secrets are masked on read and preserved when you save
+**Settings → Alerting → Alert Channels**; secrets are masked on read and preserved when you save
 a channel without retyping them. They are stored encrypted with the same key as device
 passwords (SMTP password, bot and app tokens, Slack and Discord webhook URLs), and decrypted
 only to send. Channels saved before 0.24.50 are encrypted at the next start.

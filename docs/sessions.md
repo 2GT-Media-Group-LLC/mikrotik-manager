@@ -22,7 +22,7 @@ router you want recorded. Nothing changes on the router; MikroTik Manager just k
 what the router already sends. Operators and admins can turn it on in their sites.
 
 A busy router can make many sessions a second, so it starts off. Sessions are kept for **3
-days** (`retention_sessions_days`, under **Settings → Data Retention**).
+days** (`retention_sessions_days`, under **Settings → General → Data Retention**).
 
 ## How a session is put together
 

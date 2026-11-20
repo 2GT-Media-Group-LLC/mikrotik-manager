@@ -111,7 +111,7 @@ then says when recording began, so the gap doesn't read as missing traffic.
 ### Names looked up (AdGuard Home and Pi-hole)
 
 NetFlow carries addresses, not names. Add the servers that answer a site's DNS under
-**Settings → DNS Query Log** (fleet admins): AdGuard Home or Pi-hole (version 6 or later), with
+**Settings → DNS Query Log** (fleet admins; fleet operators see it read-only): AdGuard Home or Pi-hole (version 6 or later), with
 the site whose clients use it, its web address and login. Add every one of them: two resolvers
 sharing the load each see their own part of the lookups, and the counts add up. **Test** checks
 the address and login first. MikroTik Manager then reads each query log every minute and keeps

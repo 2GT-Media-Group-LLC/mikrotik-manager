@@ -410,21 +410,25 @@ history, uptime figures and reports keep every outage. **Snooze** instead hides 
 | **Ports** | The switch faceplate, per-port configuration, bonds, VLAN membership |
 | **Bridges** | Every bridge, its ports, VLAN filtering and spanning tree; create, rename, edit, delete |
 | **VLANs** | The bridge VLAN table, copying VLANs between switches, and VLAN interfaces (`/interface vlan`) with their parent and addresses, which you can add, edit and remove |
-| **Radios** | Wireless interfaces, SSIDs, channels, connected clients |
-| **Firewall** | Filter and NAT rules and address lists, for IPv4 and IPv6 (the **IPv4** / **IPv6** switch at the top), with reordering and counters, and [Quick rules](#quick-firewall-rules). IPv6 NAT needs RouterOS 7 |
+| **802.1X** | Port authentication on switches and routers, with RADIUS from User Manager or your own server. See [802.1X](#8021x) |
 | **Routing** | IPv4 routes, IPv6 routes (read-only), routing rules, OSPF, BGP, routing tables and filters |
-| **Queues** | Traffic shaping |
-| **Connections** | The live connection tracking table: the total, and the first 200, 500 or 2,000 connections, filtered by protocol on the router. A busy router isn't asked for its whole table, and refreshing is on request unless you turn on auto-refresh (#300). Every column sorts, ports included (before 0.71.0, RouterOS 7.24's ports were missing) |
-| **Graphs** | History for this device, one range for every chart (1h to 30d), with a hover cursor shared across them. See [Device graphs](#device-graphs) |
-| **Hardware** | Health sensors, PoE, SFP module detail, and CPU and memory history: 5-minute averages as lines, with a light band up to the highest reading in each 5 minutes, so a short burst to 100% doesn't hide in the average (#402). Memory's band only shows where the peak is more than two points above the average |
-| **LTE** | Signal, carrier, bands and the data cap — see [Cellular](cellular.md) |
+| **Firewall** | Filter and NAT rules and address lists, for IPv4 and IPv6 (the **IPv4** / **IPv6** switch at the top), with reordering and counters, and [Quick rules](#quick-firewall-rules). IPv6 NAT needs RouterOS 7 |
 | **Security** | Baseline hardening checks and the posture score |
+| **Bandwidth** | Queues (traffic shaping) and FastTrack. See [Bandwidth queues and FastTrack](#bandwidth-queues-and-fasttrack) |
+| **Connections** | The live connection tracking table: the total, and the first 200, 500 or 2,000 connections, filtered by protocol on the router. A busy router isn't asked for its whole table, and refreshing is on request unless you turn on auto-refresh (#300). Every column sorts, ports included (before 0.71.0, RouterOS 7.24's ports were missing) |
 | **Config** | System settings, certificates, SSH keys, clock |
+| **Firmware** | Check for and install RouterOS and RouterBOOT updates for this device, with a link to the fleet [Firmware](firmware.md) page |
 | **Config History** | Snapshots of `/export`, diffs, and rollback ([what rollback can do](backups.md#restoring)) |
-| **Tools** | Ping, traceroute, IP scan, Wake-on-LAN, packet capture, bandwidth test |
+| **Hardware** | Health sensors, PoE, SFP module detail, and CPU and memory history: 5-minute averages as lines, with a light band up to the highest reading in each 5 minutes, so a short burst to 100% doesn't hide in the average (#402). Memory's band only shows where the peak is more than two points above the average |
+| **Graphs** | History for this device, one range for every chart (1h to 30d), with a hover cursor shared across them. See [Device graphs](#device-graphs) |
+| **Radios** | Wireless interfaces, SSIDs, channels, connected clients |
+| **Antenna Aligner** | Live signal while you aim a point-to-point link. See [Antenna aligner](antenna-aligner.md) |
+| **LTE** | Signal, carrier, bands and the data cap — see [Cellular](cellular.md) |
+| **Tools** | Ping, traceroute, IP scan, Torch, Wake-on-LAN, packet capture, bandwidth test |
 
 Tabs appear only where they apply: a switch has no Radios tab, a device without a modem has no
-LTE tab.
+LTE tab, an access point has no 802.1X tab, and Antenna Aligner shows only on Wireless System
+devices managed over the API.
 
 ### Editing settings
 

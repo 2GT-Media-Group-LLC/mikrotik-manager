@@ -83,7 +83,7 @@ building); 12 is about street level. Blank fits the map to what's on it, as befo
 - and by **Pick on map**. While picking, **Use the map's zoom** takes the zoom you've
 zoomed the picker to.
 
-If **Settings → Maps enabled** is off, no geocoding or tile request is made and the map is
+If **Settings → Dark Site Mode → Maps and address lookup** is off, no geocoding or tile request is made and the map is
 hidden; addresses and typed positions are still stored.
 
 ## Site address and device locations

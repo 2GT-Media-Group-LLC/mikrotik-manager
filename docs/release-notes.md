@@ -3,6 +3,98 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## What's new in 1.1
+
+A summary for anyone coming from 1.0: what 1.1 adds beyond the latest 1.0.x. The beta entries
+below have the detail, release by release.
+
+### New
+
+- **Firewall zones.** Group interfaces into zones and set what may pass between them; the
+  manager writes and keeps the RouterOS rules, with presets, logging per zone and per rule, and
+  rules that name addresses, hostnames, ports or any IP protocol ([Zones](devices.md#zones)).
+  **Quick rules** add common protections such as [brute-force protection](devices.md#brute-force-protection)
+  in one step ([Quick firewall rules](devices.md#quick-firewall-rules)), and the IPv6 firewall can
+  be edited like IPv4.
+- **Firewall Logs and Sessions**, under **Security**: firewall log lines grouped by rule, zone and
+  application, filtered by zone, with rules you choose hidden
+  ([Firewall logs](firewall-events.md)); and one row per connection from NetFlow, with NAT and
+  bytes each way ([Sessions](sessions.md)).
+- **Traffic**: where traffic goes and the names behind it, from DNS query logs in AdGuard Home or
+  Pi-hole, rates rather than totals, and zooming in on a time ([Traffic analytics](traffic.md)).
+- **Network services**: routing rules, Tunnels & PPP (the state of every IPsec peer, PPPoE link,
+  PPP session and EoIP, GRE or IPIP tunnel, and PPP users you can manage), MLAG, Netinstall from a
+  router, DNS over HTTPS, and WireGuard client configs with a
+  QR code ([Network services](network-services.md)).
+- **Switching**: VLAN interfaces you can add and edit, Q-in-Q and MVRP, spanning tree you can set per bridge, port and site, bridge MTU, and 802.1X with User
+  Manager ([Devices](devices.md#8021x), [User Manager](user-manager.md)).
+- **CAPsMAN quick set**: set up a controller and its access points, on one band or both, with a
+  5 GHz SSID of its own if you want one ([CAPsMAN](capsman.md)).
+- **Device pages**: a Graphs tab with history for every chart, a Firmware tab, Torch in Tools,
+  port labels, a drawn faceplate that fits the device, an SMS inbox for LTE, and the antenna
+  aligner for a new Wireless Systems device type ([Devices](devices.md#device-tabs),
+  [Antenna aligner](antenna-aligner.md)).
+- **Topology**: links from OSPF, your own firewall or modem on top, top-down or left-to-right
+  layout, and a connection path from any client all the way up ([Topology](topology.md)).
+- **Reaching devices**: [jump hosts](jump-hosts.md) for devices behind another router, and
+  backups over the API when SSH is off ([Backups](backups.md#devices-with-ssh-off)).
+- **The manager itself**: Let's Encrypt certificates ([Let's Encrypt](configuration.md#lets-encrypt-acme)),
+  a reverse proxy with Let's Encrypt on routers ([Device certificates](certificates.md#reverse-proxy)),
+  12- or 24-hour time, themes and accent colours, scheduled bulk commands
+  ([Bulk commands](commands.md)), and read-only [AI connections](ai-connections.md) over MCP or
+  OpenAPI.
+- **Large fleets**: polls that don't stall on big networks, and fewer false "device offline"
+  alerts ([Polling and scaling](scaling.md)).
+
+### Changes you may notice
+
+- **Who sees Settings.** Admins change everything. Fleet operators see every Settings tab
+  read-only (SSH Keys apart) and can no longer change alerting, webhooks, report schedules or
+  clear the poll queue; write API tokens, which act as an operator, lose them too. Viewers and
+  accounts limited to particular sites see only their own account
+  ([Who sees Settings](configuration.md#who-sees-settings)).
+- **Netinstall and scheduled commands need an admin.** Netinstall changes need an admin for the
+  router's site, and a scheduled bulk command runs only while the account that made it is still
+  an admin ([Netinstall](network-services.md#netinstall), [Bulk commands](commands.md)).
+- **Menu**: Firewall Logs and Sessions moved under **Security**.
+- **Zones fold their rules away.** With zones on, a device's Firewall tab reads as zones; the
+  chains and jumps that carry them out are behind **Show RouterOS rules**.
+
+### Upgrading from 1.0
+
+1. Update to the latest 1.0.x first if you can, then take a [platform backup](platform-backup.md)
+   (**Settings → Backup & Restore**).
+2. Get the 1.1 compose file as well as the images, and keep your `.env`
+   ([Updating and image versions](configuration.md#updating-and-image-versions)). A 1.0 compose
+   file with 1.1 images also starts, so an update half done isn't stuck.
+3. Start it. Database migrations run on their own. PostgreSQL and Redis restart once, because
+   1.1's compose file pins newer builds of their images (still PostgreSQL 15 and Redis 7).
+
+Going back to 1.0 means restoring that platform backup: migrations only go forwards.
+
+Every security fix made during 1.1 also shipped on 1.0.x, so an up-to-date 1.0 install already
+has them ([1.0 release notes](#mikrotik-manager-10)).
+
+### Thank you
+
+Code in 1.1 from [@eskyuu](https://github.com/eskyuu) (Let's Encrypt, source builds behind a proxy, RouterBOOT
+restarts, fewer refreshes, adding a device without checking it first),
+[@JohnDepon](https://github.com/JohnDepon) (performance on large fleets),
+[@KevinGinger](https://github.com/KevinGinger) (jump hosts, log CPU),
+[@jenserling](https://github.com/jenserling) (time format, Wireless Systems and the antenna
+aligner), [@davidcoulson](https://github.com/davidcoulson) (the Firmware tab),
+[@Bigben83](https://github.com/Bigben83) (the MCP connector AI connections grew from),
+[@thanhtrung5763](https://github.com/thanhtrung5763) (faster log tables),
+[@Lithiuhm](https://github.com/Lithiuhm) (WireGuard QR codes) and
+[@azizfayziev](https://github.com/azizfayziev) (Firewall Logs periods). Security reports from
+[@davidcoulson](https://github.com/davidcoulson), [@pimlie](https://github.com/pimlie) and
+[@orshih6](https://github.com/orshih6). And to everyone whose requests and testing
+shaped it, among them [@ronchan44](https://github.com/ronchan44),
+[@azizfayziev](https://github.com/azizfayziev), [@cybr4nx](https://github.com/cybr4nx),
+[@pimlie](https://github.com/pimlie), [@kraken-XIV](https://github.com/kraken-XIV),
+[@simonkrebsd3](https://github.com/simonkrebsd3), [@kamils777](https://github.com/kamils777)
+and [@trackersoft](https://github.com/trackersoft).
+
 ## 1.1.0-beta.75
 
 The fixes in 1.0.29 below, two of them security fixes, and more hardening from the 1.1
