@@ -7,6 +7,19 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.27
+
+Released on Thursday 19 November 2026.
+
+- **AP Radio TX Retries says why it's empty under legacy CAPsMAN.** The card works from each
+  client's CCQ, which a legacy `wireless` radio reports in its own registration table. Once
+  CAPsMAN manages the radio, its clients show only on the controller, whose
+  `/caps-man registration-table` has no CCQ, so there is nothing to chart. The card now says
+  so, rather than suggesting only Wi-Fi 6/7 radios lack it. Thanks to Ron
+  ([@ronchan44](https://github.com/ronchan44)) for
+  [#470](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/470) and the prints that
+  confirmed it.
+
 ## 1.0.26
 
 Released on Thursday 19 November 2026. Performance on large fleets, all from
