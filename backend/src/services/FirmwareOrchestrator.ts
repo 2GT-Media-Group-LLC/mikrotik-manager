@@ -53,6 +53,8 @@ const REBOOT_TIMEOUT_MS = 12 * 60_000; // give slow flash writes room
 // RouterBOOT reboot was sent never took the reboot. It's asked once more: the
 // new RouterBOOT is already written, so a second reboot only applies it.
 const ROUTERBOOT_RESEND_AFTER_MS = 2 * 60_000;
+// Uptime is reported in whole seconds; allow for rounding and sampling jitter.
+const UPTIME_SAMPLE_TOLERANCE_SECONDS = 2;
 
 /**
  * Operator overrides, read per rollout so a change needs no restart.
@@ -857,6 +859,7 @@ export class FirmwareOrchestrator {
       return { ok: true, skipped: true, before };
     }
     const uptimeBefore: number | null = await probe.getUptimeSeconds().catch(() => null);
+    const uptimeSampledAt = performance.now();
     try {
       await this.setItem(item.id, { status: 'routerboot' });
       await probe.installRouterboardUpgrade();   // upgrades, then reboots
@@ -869,9 +872,9 @@ export class FirmwareOrchestrator {
     await this.setItem(item.id, { status: 'rebooting' });
 
     // Second reboot of this upgrade. Same budget as the first. The device may
-    // still be up for a few seconds after the reboot command, so a reading only
-    // counts once uptime proves it restarted; otherwise the old bootloader
-    // version would be read and reported as a failed upgrade.
+    // still be up for a few seconds after the reboot command. A changed
+    // bootloader version proves it restarted; otherwise compare uptime against
+    // the original reading plus elapsed time, not just the original reading.
     const deadline = Date.now() + this.rebootMs;
     const sentAt = Date.now();
     // Whether the last probe found the device up and not restarted, and
@@ -879,26 +882,45 @@ export class FirmwareOrchestrator {
     // the device took the RouterBOOT write but not the reboot, and was
     // reported as "did not come back" while it sat there reachable).
     let upNotRestarted = false;
+    let rebootUnconfirmed = false;
     let resent = false;
+    let retryError = '';
     while (Date.now() < deadline) {
       if (this.cancelRequested) return { ok: false, error: 'cancelled while rebooting' };
       await sleep(REBOOT_POLL_MS);
       const probe = new DeviceCollector(device);
       try {
         await probe.connect();
+        const uptimeReadStartedAt = performance.now();
         const uptimeNow = await probe.getUptimeSeconds().catch(() => null);
-        if (uptimeBefore != null && uptimeNow != null && uptimeNow >= uptimeBefore) {
+        const after = await probe.checkRouterboardUpgrade();
+        const versionChanged = Boolean(before && after.currentFirmware && after.currentFirmware !== before);
+        const elapsedSeconds = Math.max(0, (uptimeReadStartedAt - uptimeSampledAt) / 1000);
+        const restarted = uptimeBefore != null && uptimeNow != null &&
+          uptimeNow < uptimeBefore + elapsedSeconds - UPTIME_SAMPLE_TOLERANCE_SECONDS;
+        if (!versionChanged && !restarted) {
+          if (uptimeBefore == null || uptimeNow == null) {
+            upNotRestarted = false;
+            rebootUnconfirmed = true;
+            probe.disconnect();
+            continue;
+          }
           upNotRestarted = true;
+          rebootUnconfirmed = false;
           if (!resent && Date.now() - sentAt >= ROUTERBOOT_RESEND_AFTER_MS) {
             resent = true;
             console.log(`[Firmware] ${device.name}: still up ${Math.round((Date.now() - sentAt) / 1000)}s after the RouterBOOT reboot; sending the reboot again`);
-            await probe.reboot().catch(() => undefined);
+            try {
+              await probe.reboot();
+            } catch (e) {
+              retryError = (e as Error).message;
+              console.warn(`[Firmware] ${device.name}: RouterBOOT reboot retry failed: ${retryError}`);
+            }
           }
           probe.disconnect();
           continue;   // not restarted yet
         }
         upNotRestarted = false;
-        const after = await probe.checkRouterboardUpgrade();
         probe.disconnect();
         // Checked against the target, and an unreadable version is not a pass.
         if (!after.currentFirmware) {
@@ -917,15 +939,21 @@ export class FirmwareOrchestrator {
         console.log(`[Firmware] ${device.name}: RouterBOOT ${before || '?'} → ${after.currentFirmware || '?'}`);
         return { ok: true, before, after: after.currentFirmware };
       } catch {
+        upNotRestarted = false;
+        rebootUnconfirmed = false;
         probe.disconnect();
       }
     }
     if (upNotRestarted) {
       return {
         ok: false,
-        error: `RouterBOOT ${target || 'upgrade'} was written, but the device didn't restart when asked${resent ? ' (twice)' : ''}. ` +
+        error: `RouterBOOT ${target || 'upgrade'} was written, but the device didn't restart when asked${resent && !retryError ? ' (twice)' : ''}. ` +
+          (retryError ? `The reboot retry failed: ${retryError}. ` : '') +
           'It is still running and reachable: reboot it to finish, and the new RouterBOOT takes effect then.',
       };
+    }
+    if (rebootUnconfirmed) {
+      return { ok: false, error: 'the device is reachable, but its reboot and RouterBOOT upgrade could not be confirmed; check its uptime and bootloader version manually' };
     }
     return { ok: false, error: `device did not come back within ${Math.round(this.rebootMs / 60000)} minutes after the RouterBOOT upgrade` };
   }
