@@ -168,6 +168,19 @@ suite('the map and discovered neighbours stay in their sites', () => {
     expect(posB.status).toBe(403);
   });
 
+  it("topology: A names only the neighbours on its own part of the map", async () => {
+    currentUser = fleetAdmin();
+    const all = (await request(app).get('/api/topology')).body.externalNodes as { id: string; name: string }[];
+    const inA = all.find((n) => n.name === 'new-in-A')!;
+    const inB = all.find((n) => n.name === 'new-in-B')!;
+    expect(inA && inB).toBeTruthy();
+    currentUser = operatorInA();
+    expect((await request(app).put(`/api/topology/neighbours/${inB.id}`).send({ name: 'renamed by A' })).status).toBe(403);
+    expect((await request(app).put(`/api/topology/neighbours/${inA.id}`).send({ name: 'our AP' })).status).toBe(200);
+    const rows = await db.query<{ ext_id: string }>(`SELECT ext_id FROM topology_neighbour_overrides`);
+    expect(rows.map((r) => r.ext_id)).toEqual([inA.id]);
+  });
+
   it('topology: A still arranges its own part', async () => {
     const pos = await request(app).put('/api/topology/layout').send({ positions: { [String(id.devA)]: { x: 5, y: 5 } }, colors: { [keys.cableA]: '#abcdef' } });
     expect(pos.status).toBe(200);

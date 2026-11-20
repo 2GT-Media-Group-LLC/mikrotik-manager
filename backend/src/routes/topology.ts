@@ -80,12 +80,12 @@ interface BridgeRow {
   site_id?: number | null;
 }
 
-// GET /api/topology
-router.get('/', async (req, res) => {
-  // Scope the graph to the active site. Links are filtered on their *from*
-  // device: a link out of the site still shows, and resolves to an external
-  // node, which is the honest picture of an uplink to somewhere else (#130).
-  const siteId = activeSite(req);
+/**
+ * The discovered graph for the sites in scope. Links are filtered on their
+ * *from* device: a link out of the site still shows, and resolves to an
+ * external node, which is the honest picture of an uplink to somewhere else (#130).
+ */
+async function mapGraph(siteId: SiteScope) {
   const devFilter = siteScopeDevices(siteId);
   const fromFilter = siteScopeByDevice(siteId, 'tl.from_device_id');
   const ifFilter = siteScopeByDevice(siteId, 'device_id');
@@ -134,6 +134,31 @@ router.get('/', async (req, res) => {
   ]);
 
   const graph = buildTopology(devices, allLinks, [], deviceMacs);
+  return { devices, allLinks, deviceMacs, bridges, graph };
+}
+
+/** OSPF adjacencies in scope, which cross tunnels discovery can't (#373). */
+async function ospfPeersIn(siteId: SiteScope): Promise<OspfPeerRow[]> {
+  const fromFilter = siteScopeByDevice(siteId, 'tl.from_device_id');
+  return query<OspfPeerRow>(
+    `SELECT r.device_id, r.remote_id, r.remote_address, r.local_interface, i.type AS local_interface_type, r.state, r.up
+       FROM routing_peers r
+       LEFT JOIN interfaces i ON i.device_id = r.device_id AND i.name = r.local_interface
+      WHERE r.protocol = 'ospf' ${fromFilter ? `AND ${siteScopeByDevice(siteId, 'r.device_id')}` : ''}`
+  ).catch(() => [] as OspfPeerRow[]);
+}
+
+/** The neighbours (ext- ids) on the map of these sites. */
+async function neighboursIn(siteId: SiteScope): Promise<Set<string>> {
+  const { devices, graph } = await mapGraph(siteId);
+  const ospf = ospfTopologyLinks(await ospfPeersIn(siteId), devices, graph.links, graph.externalNodes);
+  return new Set([...graph.externalNodes, ...ospf.externalNodes].map((n) => n.id));
+}
+
+// GET /api/topology
+router.get('/', async (req, res) => {
+  const siteId = activeSite(req);
+  const { devices, allLinks, deviceMacs, bridges, graph } = await mapGraph(siteId);
 
   // Your own nodes and their links (#147), in the sites in view.
   const nodeFilter = siteScopeDevices(siteId);
@@ -198,12 +223,7 @@ router.get('/', async (req, res) => {
   }
 
   // Links from OSPF adjacencies, which cross tunnels discovery can't (#373).
-  const ospfPeers = await query<OspfPeerRow>(
-    `SELECT r.device_id, r.remote_id, r.remote_address, r.local_interface, i.type AS local_interface_type, r.state, r.up
-       FROM routing_peers r
-       LEFT JOIN interfaces i ON i.device_id = r.device_id AND i.name = r.local_interface
-      WHERE r.protocol = 'ospf' ${fromFilter ? `AND ${siteScopeByDevice(siteId, 'r.device_id')}` : ''}`
-  ).catch(() => [] as OspfPeerRow[]);
+  const ospfPeers = await ospfPeersIn(siteId);
   const ospf = ospfTopologyLinks(ospfPeers, devices, [...graph.links, ...stpLinks], graph.externalNodes);
 
   // Each device's way up, for the tiered layout (#367): the gateway on top.
@@ -570,6 +590,11 @@ router.put('/neighbours/:extId', requireWrite, async (req, res) => {
   const name = req.body?.name == null || String(req.body.name).trim() === '' ? null : String(req.body.name).trim().slice(0, 255);
   const kind = req.body?.kind == null || req.body.kind === '' ? null : String(req.body.kind);
   if (kind !== null && !NEIGHBOUR_KINDS.has(kind)) return res.status(400).json({ error: 'Unknown type' });
+  // A site-limited account names only neighbours on its own part of the map,
+  // where it can change things: the name shows on every site's map (P1-7).
+  if (isSiteScoped(req.user) && !(await neighboursIn(writableScope(req))).has(extId)) {
+    return res.status(403).json({ error: "That neighbour isn't on the part of the map you can change." });
+  }
   if (name === null && kind === null) {
     await query(`DELETE FROM topology_neighbour_overrides WHERE ext_id = $1`, [extId]);
   } else {
