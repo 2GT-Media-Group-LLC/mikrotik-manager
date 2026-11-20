@@ -173,6 +173,78 @@ it('does not retry or claim a reboot when uptime and the bootloader version are 
   jest.useRealTimers();
 });
 
+it.each([
+  ['', 'version could not be read'],
+  ['7.26', 'expected RouterBOOT 7.25.1, but the device reports 7.26'],
+])('rejects an unreadable or unexpected RouterBOOT version (%s)', async (version, error) => {
+  jest.useFakeTimers();
+  let installed = false;
+  const disconnect = jest.fn();
+  (DeviceCollector as unknown as jest.Mock).mockImplementation(() => ({
+    connect: jest.fn(), disconnect, installRouterboardUpgrade: jest.fn(async () => { installed = true; }),
+    getUptimeSeconds: jest.fn(async () => (installed ? 1 : 1000)),
+    checkRouterboardUpgrade: jest.fn(async () => (installed
+      ? { currentFirmware: version, upgradeFirmware: '7.25.1', upgradeAvailable: false }
+      : { currentFirmware: '7.25', upgradeFirmware: '7.25.1', upgradeAvailable: true })),
+  }));
+  const done = upgrade(new FirmwareOrchestrator());
+  await jest.advanceTimersByTimeAsync(20_000);
+  expect(await done).toBe(false);
+  expect(JSON.stringify(itemUpdates())).toContain(error);
+  expect(disconnect).toHaveBeenCalledTimes(2);
+  jest.useRealTimers();
+});
+
+it('reports the last probe as unreachable when the device goes offline after staying up', async () => {
+  jest.useFakeTimers();
+  const start = Date.now();
+  let installed = false;
+  const disconnect = jest.fn();
+  const connect = jest.fn(async () => {
+    if (installed && Date.now() - start > 30_000) throw new Error('connection refused');
+  });
+  (DeviceCollector as unknown as jest.Mock).mockImplementation(() => ({
+    connect, disconnect, reboot: jest.fn(), installRouterboardUpgrade: jest.fn(async () => { installed = true; }),
+    getUptimeSeconds: jest.fn(async () => 1000 + Math.floor((Date.now() - start) / 1000)),
+    checkRouterboardUpgrade: jest.fn(async () => ({ currentFirmware: '7.25', upgradeFirmware: '7.25.1', upgradeAvailable: true })),
+  }));
+  const done = upgrade(new FirmwareOrchestrator());
+  await jest.advanceTimersByTimeAsync(13 * 60_000);
+  expect(await done).toBe(false);
+  expect(JSON.stringify(itemUpdates())).toMatch(/device did not come back within/);
+  expect(disconnect).toHaveBeenCalledTimes(connect.mock.calls.length);
+  jest.useRealTimers();
+});
+
+it('surfaces a database failure after verification instead of retrying the device probe', async () => {
+  jest.useFakeTimers();
+  let installed = false;
+  const connect = jest.fn();
+  const disconnect = jest.fn();
+  (query as jest.Mock).mockImplementation(async (sql: string) => {
+    if (sql.startsWith('UPDATE devices SET routerboard_upgrade_available')) throw new Error('database unavailable');
+    return [];
+  });
+  (DeviceCollector as unknown as jest.Mock).mockImplementation(() => ({
+    connect, disconnect, installRouterboardUpgrade: jest.fn(async () => { installed = true; }),
+    getUptimeSeconds: jest.fn(async () => (installed ? 1 : 1000)),
+    checkRouterboardUpgrade: jest.fn(async () => (installed
+      ? { currentFirmware: '7.25.1', upgradeFirmware: '7.25.1', upgradeAvailable: false }
+      : { currentFirmware: '7.25', upgradeFirmware: '7.25.1', upgradeAvailable: true })),
+  }));
+  try {
+    const done = upgrade(new FirmwareOrchestrator());
+    const result = expect(done).rejects.toThrow('database unavailable');
+    await jest.advanceTimersByTimeAsync(20_000);
+    await result;
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(disconnect).toHaveBeenCalledTimes(2);
+  } finally {
+    (query as jest.Mock).mockImplementation(async () => []);
+    jest.useRealTimers();
+  }
+});
+
 it('reports a rejected reboot retry instead of saying the device was asked twice', async () => {
   jest.useFakeTimers();
   const start = Date.now();
