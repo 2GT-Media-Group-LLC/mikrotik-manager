@@ -5,46 +5,189 @@
 
 ## What's new in 1.1
 
-A summary for anyone coming from 1.0: what 1.1 adds beyond the latest 1.0.x. The beta entries
-below have the detail, release by release.
+Everything 1.1 adds beyond the latest 1.0.x, for anyone coming from 1.0. Fixes aren't listed
+here; the beta entries below have every change, release by release.
 
 ### New
 
-- **Firewall zones.** Group interfaces into zones and set what may pass between them; the
-  manager writes and keeps the RouterOS rules, with presets, logging per zone and per rule, and
-  rules that name addresses, hostnames, ports or any IP protocol ([Zones](devices.md#zones)).
-  **Quick rules** add common protections such as [brute-force protection](devices.md#brute-force-protection)
-  in one step ([Quick firewall rules](devices.md#quick-firewall-rules)), and the IPv6 firewall can
-  be edited like IPv4.
-- **Firewall Logs and Sessions**, under **Security**: firewall log lines grouped by rule, zone and
-  application, filtered by zone, with rules you choose hidden
-  ([Firewall logs](firewall-events.md)); and one row per connection from NetFlow, with NAT and
-  bytes each way ([Sessions](sessions.md)).
-- **Traffic**: where traffic goes and the names behind it, from DNS query logs in AdGuard Home or
-  Pi-hole, rates rather than totals, and zooming in on a time ([Traffic analytics](traffic.md)).
-- **Network services**: routing rules, Tunnels & PPP (the state of every IPsec peer, PPPoE link,
-  PPP session and EoIP, GRE or IPIP tunnel, and PPP users you can manage), MLAG, Netinstall from a
-  router, DNS over HTTPS, and WireGuard client configs with a
-  QR code ([Network services](network-services.md)).
-- **Switching**: VLAN interfaces you can add and edit, Q-in-Q and MVRP, spanning tree you can set per bridge, port and site, bridge MTU, and 802.1X with User
-  Manager ([Devices](devices.md#8021x), [User Manager](user-manager.md)).
-- **CAPsMAN quick set**: set up a controller and its access points, on one band or both, with a
-  5 GHz SSID of its own if you want one ([CAPsMAN](capsman.md)).
-- **Device pages**: a Graphs tab with history for every chart, a Firmware tab, Torch in Tools,
-  port labels, a drawn faceplate that fits the device, an SMS inbox for LTE, and the antenna
-  aligner for a new Wireless Systems device type ([Devices](devices.md#device-tabs),
-  [Antenna aligner](antenna-aligner.md)).
-- **Topology**: links from OSPF, your own firewall or modem on top, top-down or left-to-right
-  layout, and a connection path from any client all the way up ([Topology](topology.md)).
-- **Reaching devices**: [jump hosts](jump-hosts.md) for devices behind another router, and
-  backups over the API when SSH is off ([Backups](backups.md#devices-with-ssh-off)).
-- **The manager itself**: Let's Encrypt certificates ([Let's Encrypt](configuration.md#lets-encrypt-acme)),
-  a reverse proxy with Let's Encrypt on routers ([Device certificates](certificates.md#reverse-proxy)),
-  12- or 24-hour time, themes and accent colours, scheduled bulk commands
-  ([Bulk commands](commands.md)), and read-only [AI connections](ai-connections.md) over MCP or
-  OpenAPI.
-- **Large fleets**: polls that don't stall on big networks, and fewer false "device offline"
-  alerts ([Polling and scaling](scaling.md)).
+**Firewall zones** ([Zones](devices.md#zones))
+
+- Group a router's interfaces into zones and set what may pass between each pair, in a matrix;
+  the manager writes and keeps the RouterOS rules, under Change Guard with **Review changes**.
+- Presets to start from: home or small office, an office with a guest network, a management
+  network, or servers in a DMZ.
+- Custom rules in a zone pair can name ports, addresses, hostnames, ICMP of one type, or any IP
+  protocol by number. NAT rules can name the WAN interface.
+- **Log drops** per zone, capped at 5 a second so logging can't overload a small router, and
+  **Log** on a rule (or **Log some of it** on an allow-all pair) for what a zone accepts.
+- Zones can limit what the manager itself reaches on the router to the API, API-SSL and SSH
+  ports.
+- With zones on, the Firewall tab reads as zones; the chains and jumps behind them are under
+  **Show RouterOS rules**.
+- Zones work on routers without FastTrack offload.
+
+**Firewall** ([Devices](devices.md#quick-firewall-rules))
+
+- **Quick rules**: common protections in one step, including
+  [brute-force protection](devices.md#brute-force-protection), which bans an address after
+  repeated failed logins and shows bans across the fleet on the Security page. Management access
+  adds the manager's own address.
+- The IPv6 firewall can be edited like IPv4: filter rules, NAT (RouterOS 7) and address lists,
+  with reordering, counters and **Review changes**.
+- A rule that logs gets a short tag in its log prefix, so Firewall Logs can say which rule logged
+  a line; rules that would read the same show their tags.
+- Known RouterOS CVEs count in a device's hardening score.
+
+**Firewall Logs and Sessions**, now under **Security** ([Firewall logs](firewall-events.md),
+[Sessions](sessions.md))
+
+- Firewall Logs opens grouped: one line per device, rule, interfaces, protocol and port, with
+  counts. **Raw** shows every line.
+- It reads in zones, with zones as coloured badges, and filters **From any zone** and **To any
+  zone**.
+- A period (1 hour to 30 days), an **All rules** filter for one rule's lines, and **Hide rules**
+  for everything but the rules you pick.
+- An **Application** column naming the service behind each port, with row colours for DHCP and
+  multicast. Port names, ranges and colours are set under **Settings → Firewall Logs**.
+- **Resolve names** shows client hostnames and reverse DNS in place of addresses.
+- The Firewall tab can show only the rules that log.
+- **Sessions**: one row per connection from NetFlow, with the client, server, NAT, bytes each way
+  and how it ended.
+- Routers behind NAT are told apart in NetFlow, so their flows aren't lumped together.
+
+**Traffic** ([Traffic analytics](traffic.md))
+
+- Click an application to see the clients behind it, each with its share, and **Where it goes**:
+  its destinations and Top Destinations.
+- Names behind addresses, from the DNS query logs of AdGuard Home or Pi-hole
+  (**Settings → DNS Query Log**), including AdGuard Home as a Home Assistant add-on.
+- Port names from Settings → Firewall Logs name Traffic's applications too.
+- Drag across a chart to zoom the whole page into that window.
+- Graphs as rates (bits and packets per second) rather than totals, under **Settings → General →
+  Appearance**.
+- A new layout: Top Talkers beside Traffic by Application, with Top Destinations below.
+
+**Network services** ([Network services](network-services.md))
+
+- **Tunnels & PPP**: the state of every IPsec peer, PPPoE server and client, PPP session, and
+  EoIP, GRE and IPIP tunnel, problems first, with a **Tunnel down** alert. **PPP Users and
+  Sessions** reads a router live: disconnect a session, and turn a PPP user or a PPPoE server off
+  or on.
+- **Netinstall** from a router running RouterOS's netinstall package: install the package,
+  entries that name the device to install, the package cache, and starting an install.
+- **MLAG**: each pair's state and role, the peer link, settings that differ between peers, and
+  heartbeat and host-sync storms from the logs, with an **MLAG degraded** alert.
+- **Routing rules** on a device's Routing tab, in order, with what each one looks up.
+- **DNS over HTTPS** on Network Services → DNS.
+- **WireGuard**: a peer's client `.conf` and QR code, and **Add Peer** can generate the client's
+  key pair.
+- DHCP, DNS, NTP and PPP open on the device when a site has only one.
+- **Reverse proxy** rules on routers, with Let's Encrypt certificates for public hostnames, on a
+  new tab of **Operations → Certificates** ([Device certificates](certificates.md#reverse-proxy)).
+
+**Switching, VLANs and bridges** ([Devices](devices.md#bridges))
+
+- VLAN interfaces can be added, edited and removed from the VLANs tab, with addresses, and a
+  change to the one the manager reaches the device through is predicted as a lockout.
+- **Q-in-Q** (a bridge's VLAN tag type, and a port's tag stacking) and **MVRP**, on bridges,
+  bridge VLANs (forbidden ports) and VLAN interfaces.
+- A bridge's addresses can be edited from the Bridges tab, and EoIP, wireless, VLAN and other
+  interfaces not on the faceplate can be added to a bridge.
+- Spanning tree you can set: a **Spanning Tree** card on the topology page for every tree in
+  view, and each bridge port's priority, path cost, edge, point-to-point, BPDU guard and
+  restricted role and TCN.
+- A bridge's MTU can be set, and a port's MTU form says the most its hardware takes.
+- **802.1X** on switches and routers: ports that authenticate clients, with RADIUS from User
+  Manager or your own server ([802.1X](devices.md#8021x), [User Manager](user-manager.md#8021x-with-user-manager)).
+- Drawn ports on the faceplate (RJ45 jacks, SFP cages, QSFP), sized to the device with its model
+  name, virtual interfaces in a box of their own, and ports per row remembered per device.
+- Config Health finds access ports left tagged in other VLANs.
+
+**Device pages** ([Device tabs](devices.md#device-tabs))
+
+- A **Graphs** tab: history for every chart over one range (1 hour to 30 days), with a shared
+  hover cursor, interfaces, connections, NAT, firewall drops and per-core CPU
+  ([Device graphs](devices.md#device-graphs)).
+- **Peaks and drops**: CPU and memory peaks as a band above the 5-minute average, and dropped
+  packets counted.
+- A **Firmware** tab for the RouterOS and RouterBOOT check and install.
+- **Torch** in Tools: who is talking on an interface right now, flow by flow, narrowed by
+  address, port and protocol.
+- An **SMS inbox** on the LTE tab, and the data-cap rule can delete the carrier's replies to its
+  reset SMS ([Cellular](cellular.md)).
+- A **Wireless Systems** device type for outdoor PTP, PtMP and CPE radios, with an **Antenna
+  Aligner** tab: live signal from one or both ends of a link and an optional tone
+  ([Antenna aligner](antenna-aligner.md)).
+- Backups over the API when SSH is off, on RouterOS 7.13 and later
+  ([Backups](backups.md#devices-with-ssh-off)).
+- **Force add without checking connectivity** in Add Device, for a device that isn't reachable
+  yet.
+- The **Configuration changed** alert says what changed, as a diff.
+
+**Wireless and CAPsMAN** ([CAPsMAN](capsman.md#set-up-capsman))
+
+- **Set up CAPsMAN** on the Wireless page: a controller and its access points, on both bands or
+  one, with a 5 GHz SSID of its own if you want one, on wifi and legacy CAPsMAN.
+- A controller with radios of its own shows as **Controller and AP**.
+- AP Radio TX Retries remembers the band you picked.
+
+**Topology** ([Topology](topology.md))
+
+- Curved links leaving the bottom of one card and entering the top of the next, with **Links** to
+  switch back to straight lines.
+- A tiered layout with the gateway on top, then core, access and APs, drawn top-down or
+  left-to-right, and **Arrange** to lay the cards out again.
+- A **Compact** view of icons with a role chip (Gateway, CAPsMAN, CAP, STP root).
+- Port labels on links, short port names, bonds shown at both ends, and parallel links over
+  VLAN, VRRP or bond interfaces merged into one with a **+N**.
+- Links heard over tunnels drawn dotted; links from OSPF neighbours, for routers reached only
+  over tunnels.
+- Hosts that send LLDP without a name collapse into one **N hosts** chip.
+- Your own firewall, ISP modem or other gateway as a node on top of the map.
+- **Export** the whole map as PNG or SVG.
+- **Display** holds the Cards, Links, Layout and Port labels choices in one place.
+
+**Clients and sites** ([Clients](clients.md), [Sites](sites.md))
+
+- Client columns can be hidden and resized.
+- Clients leaves out the manager's own network devices, and switches, routers and access points
+  it doesn't manage.
+- **Connection Path** goes from a client's device all the way to the top of the site.
+- A site can be placed on the map by latitude and longitude, and has its own map zoom, used
+  wherever its devices show; the sites map opens on the default site.
+
+**Dashboard**
+
+- A readable **Capacity & health** card: busiest devices first, shared name prefixes shown once,
+  24-hour CPU graphs, and each metric opens its device graph.
+
+**Operations and the manager itself**
+
+- [Jump hosts](jump-hosts.md): reach devices through an SSH connection to another router, with
+  RouterOS's reason when forwarding is off.
+- **Scheduled bulk commands**, once or repeating ([Bulk commands](commands.md#schedules)).
+- **A template from a device**: start a command template from a device's configuration
+  ([Templates](commands.md#a-template-from-a-device)).
+- **AI connections**: read-only fleet review for AI tools over MCP or OpenAPI, with a token or
+  your identity provider ([AI connections](ai-connections.md)).
+- **Let's Encrypt** certificates for the manager ([Let's Encrypt](configuration.md#lets-encrypt-acme)).
+- **12- or 24-hour time**, as a fleet default and per account
+  ([Time display](configuration.md#time-display)).
+- **Appearance**: a System theme that follows your computer, seven accent colours or your own,
+  and Midnight dark surfaces ([Appearance](configuration.md#appearance)).
+- Source builds behind a network proxy (`HTTPS_PROXY`).
+- Settings tabs can be linked to and stay put on reload.
+- User Manager is in the sidebar only where a device runs it.
+
+**Scale and reliability** ([Polling and scaling](scaling.md))
+
+- Polls no longer stall on large networks: clients are written in batches.
+- A device is marked offline only after a number of missed polls in a row (**Missed polls
+  before offline**, 2 by default); when most of a site goes quiet at once there's one alert for
+  the site; and a reboot the manager sent, a rollout step or a maintenance window doesn't alert.
+- Device Logs and Firewall events open quickly on large log tables.
+- New major versions underneath: Express 5, BullMQ, openid-client 6, recharts 3, zustand 5 and
+  TypeScript 6, and property-based fuzz tests on code that reads outside input.
 
 ### Changes you may notice
 
@@ -77,23 +220,52 @@ has them ([1.0 release notes](#mikrotik-manager-10)).
 
 ### Thank you
 
-Code in 1.1 from [@eskyuu](https://github.com/eskyuu) (Let's Encrypt, source builds behind a proxy, RouterBOOT
-restarts, fewer refreshes, adding a device without checking it first),
-[@JohnDepon](https://github.com/JohnDepon) (performance on large fleets),
-[@KevinGinger](https://github.com/KevinGinger) (jump hosts, log CPU),
-[@jenserling](https://github.com/jenserling) (time format, Wireless Systems and the antenna
-aligner), [@davidcoulson](https://github.com/davidcoulson) (the Firmware tab),
-[@Bigben83](https://github.com/Bigben83) (the MCP connector AI connections grew from),
-[@thanhtrung5763](https://github.com/thanhtrung5763) (faster log tables),
-[@Lithiuhm](https://github.com/Lithiuhm) (WireGuard QR codes) and
-[@azizfayziev](https://github.com/azizfayziev) (Firewall Logs periods). Security reports from
-[@davidcoulson](https://github.com/davidcoulson), [@pimlie](https://github.com/pimlie) and
-[@orshih6](https://github.com/orshih6). And to everyone whose requests and testing
-shaped it, among them [@ronchan44](https://github.com/ronchan44),
-[@azizfayziev](https://github.com/azizfayziev), [@cybr4nx](https://github.com/cybr4nx),
-[@pimlie](https://github.com/pimlie), [@kraken-XIV](https://github.com/kraken-XIV),
-[@simonkrebsd3](https://github.com/simonkrebsd3), [@kamils777](https://github.com/kamils777)
-and [@trackersoft](https://github.com/trackersoft).
+1.1 is mostly features people asked for. Thank you to everyone who suggested one, tested a
+beta, sent a fix or reported a problem:
+
+- [@ronchan44](https://github.com/ronchan44) (Ron): firewall zones and everything around them
+  (custom rules with addresses, hostnames and protocols, logging per zone and per rule, which rule
+  logged a line, presets), the Firewall Logs redesign and Sessions, Tunnels & PPP and Netinstall,
+  the reverse proxy with Let's Encrypt, scheduled bulk commands, 802.1X with User Manager,
+  placing sites on the map and their zoom, routing rules, backups without SSH, drawn ports, Torch,
+  the CAPsMAN quick set, NAT rules naming the WAN, dashboard metrics that open their graph, Q-in-Q
+  and MVRP, zooming into Traffic, the only device chosen for you, bridge addresses and interfaces
+  from the Bridges tab, DNS over HTTPS, AP Radio TX Retries, and testing nearly every beta.
+- [@azizfayziev](https://github.com/azizfayziev) (aziz): Traffic from an application to its
+  clients, destinations and names; the more readable topology map, with its tiered layout,
+  compact view, port labels and export; the Capacity & health card; MLAG monitoring and its peer
+  link; the Graphs tab with peaks and drops; Clients leaving out network devices and the
+  Connection Path; and code for Firewall Logs' period, **All rules** and **Hide rules** filters
+  and for fewer false offline alerts.
+- [@eskyuu](https://github.com/eskyuu) (Steven Wilton): Let's Encrypt for the manager, source
+  builds behind a proxy, adding a device without checking it first, fewer refreshes from busy
+  pages, the RouterBOOT restart check, and Config Health's check of VLAN interfaces as bridge
+  ports.
+- [@KevinGinger](https://github.com/KevinGinger): jump hosts, and RouterOS's reason when one
+  can't forward.
+- [@jenserling](https://github.com/jenserling): 12- or 24-hour time, and Wireless Systems with
+  the antenna aligner.
+- [@JohnDepon](https://github.com/JohnDepon): traffic graphs as rates, and performance on large
+  fleets.
+- [@davidcoulson](https://github.com/davidcoulson): the Firmware tab, and security reports.
+- [@Bigben83](https://github.com/Bigben83): the read-only MCP connector that AI connections grew
+  from.
+- [@cybr4nx](https://github.com/cybr4nx): Quick firewall rules and zone presets, and resizable
+  client columns.
+- [@Lithiuhm](https://github.com/Lithiuhm): WireGuard client configs and QR codes.
+- [@thanhtrung5763](https://github.com/thanhtrung5763): log tables that open quickly.
+- [@pimlie](https://github.com/pimlie): topology links from OSPF, and security reports.
+- [@dlemery](https://github.com/dlemery): editing the IPv6 firewall.
+- [@rvanderwouw](https://github.com/rvanderwouw): VLAN interfaces on the VLANs tab.
+- [@kraken-XIV](https://github.com/kraken-XIV): the System theme and accent colours.
+- [@simonkrebsd3](https://github.com/simonkrebsd3): brute-force protection.
+- [@kamils777](https://github.com/kamils777): the Configuration changed alert's diff.
+- [@HectorUrrea24](https://github.com/HectorUrrea24) (Hector): PPP users and sessions.
+- [@Toryius](https://github.com/Toryius) (Manuel): a template from a device.
+- [@trackersoft](https://github.com/trackersoft) (Stanley): the SMS inbox and deleting the
+  carrier's replies, and readable chart labels.
+- [@schmitt330](https://github.com/schmitt330): device tools on RouterOS 6.
+- [@orshih6](https://github.com/orshih6): a security report on the release workflow.
 
 ## 1.1.0-beta.75
 
