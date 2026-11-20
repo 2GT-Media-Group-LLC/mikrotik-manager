@@ -44,9 +44,11 @@ over that wireless link the manager may lose contact (#294). Enabling one doesn'
   overlap** warning uses the same analysis.
 - **AP deployment density** — client count plotted against signal, so an AP serving many
   clients at poor signal is visible as a cluster in the wrong corner.
-- **TX-retry histogram**, derived from per-client CCQ. This is only available on the legacy
-  `wireless` driver; on an all-RouterOS-7 fleet the panel says so rather than showing an empty
-  chart forever.
+- **TX-retry histogram**, derived from per-client CCQ. Only a legacy `wireless` radio that
+  isn't managed by CAPsMAN reports CCQ. `wifi` (Wi-Fi 6/7) radios don't, and a legacy radio
+  under CAPsMAN doesn't either: its clients show only in the controller's
+  `/caps-man registration-table`, which has no CCQ (#470). With no CCQ to read, the panel
+  says so rather than showing an empty chart.
 - **DHCP Pool Usage**: how full each address pool is (see
   [DHCP](network-services.md#dhcp)). It replaced the log-derived "WiFi Connectivity Success"
   funnel, which counted ordinary disconnects as failures (#156). An exhausted pool is the

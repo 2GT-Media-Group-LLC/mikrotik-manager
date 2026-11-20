@@ -331,8 +331,10 @@ export function TxRetries({ deviceId }: { deviceId?: number }) {
 
       {radios.length === 0 ? (
         <div className="py-6 text-center text-sm text-gray-400 dark:text-slate-500">
-          No TX-retry data. This is derived from per-client CCQ, which the legacy
-          <span className="font-mono"> wireless</span> driver reports; Wi-Fi 6/7 (<span className="font-mono">wifi</span>) radios don&apos;t expose it.
+          No TX-retry data. It comes from per-client CCQ, which only a legacy
+          <span className="font-mono"> wireless</span> radio reports, in its own registration table.
+          Wi-Fi 6/7 (<span className="font-mono">wifi</span>) radios don&apos;t report it, and neither do legacy
+          radios managed by CAPsMAN: their clients show on the controller, which has no CCQ.
         </div>
       ) : (
         <>
