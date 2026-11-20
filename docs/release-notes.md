@@ -7,6 +7,19 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.28
+
+Released on Friday 20 November 2026. A security fix; update soon if you use per-site roles.
+
+- **Accounts limited to some sites saw, and could rearrange, other sites' parts of the map**
+  ([GHSA-97cq-mgp7-9p5f](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-97cq-mgp7-9p5f)). The discovered-devices list showed neighbours
+  heard anywhere in the fleet, with their addresses and the names of devices managed in other
+  sites, and the topology map sent every site's hidden links, positions and link colours. An
+  operator in one site could also move, recolour, hide or show links on another site's map. A
+  site-limited account now sees only what its own sites' devices heard and its own part of the
+  saved map, and changes it only where it's an operator or admin. No device logins or settings
+  were exposed. Found in the 1.1 security review.
+
 ## 1.0.27
 
 Released on Thursday 19 November 2026.
