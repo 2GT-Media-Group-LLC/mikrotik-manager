@@ -8,6 +8,7 @@
 // arrives already encrypted is refused.
 
 import { isSealed } from './sealed';
+import { stripTrailingSlashes } from './trailingSlashes';
 
 export interface DnsSourceInput {
   name: string;
@@ -44,7 +45,7 @@ export function parseDnsSource(body: Record<string, unknown>, saved?: SavedSourc
   if (!Number.isSafeInteger(siteId) || siteId <= 0) return { error: 'Choose the site whose clients use this DNS server.', field: 'site_id' };
   const ue = urlError(body.url);
   if (ue) return { error: ue, field: 'url' };
-  const url = String(body.url).trim().replace(/\/+$/, '');
+  const url = stripTrailingSlashes(String(body.url).trim());
   const username = body.username === undefined || body.username === null ? '' : body.username;
   if (typeof username !== 'string' || username.length > 200) return { error: 'The username is up to 200 characters.', field: 'username' };
   const tlsVerify = body.tls_verify === undefined ? true : body.tls_verify;

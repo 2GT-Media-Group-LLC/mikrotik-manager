@@ -7,6 +7,7 @@
  * plumbing lives in utils/previewContext.ts and services/changePreview.ts.
  */
 import { isSecretKey } from './redactSecrets';
+import { stripTrailingSlashes } from './trailingSlashes';
 
 /** One write the request would have sent, as the review modal shows it. */
 export interface PreviewStep {
@@ -227,7 +228,7 @@ const PREVIEWABLE: [string, RegExp][] = [
 const NOT_PREVIEWABLE = /\/(reset-counters|flush)$/;
 
 export function isPreviewableRoute(method: string, url: string): boolean {
-  const path = url.split('?')[0].replace(/\/+$/, '');
+  const path = stripTrailingSlashes(url.split('?')[0]);
   if (NOT_PREVIEWABLE.test(path)) return false;
   return PREVIEWABLE.some(([methods, re]) => methods.split('|').includes(method.toUpperCase()) && re.test(path));
 }

@@ -16,6 +16,7 @@ import { endAllSessions } from '../../utils/sessionState';
 import {
   extractGroups, mapGroupsToRole, deriveUsername, getEmail, isEmailVerified, emailDomainAllowed,
 } from './claimMapping';
+import { stripTrailingSlashes } from '../../utils/trailingSlashes';
 
 const TX_TTL_SECONDS = 600; // 10 minutes
 const txKey = (state: string): string => `oidc:tx:${state}`;
@@ -40,7 +41,7 @@ export function bindingHash(binding: string): string {
   return createHash('sha256').update(binding).digest('hex');
 }
 
-const withoutTrailingSlash = (s: string): string => s.replace(/\/+$/, '');
+const withoutTrailingSlash = (s: string): string => stripTrailingSlashes(s);
 
 /**
  * The library's message, with the reason underneath it when there is one

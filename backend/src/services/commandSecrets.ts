@@ -12,7 +12,7 @@
  * value in pieces, which masking can't catch, so whoever writes the command
  * has to be someone who could see the secret anyway.
  */
-import { randomBytes } from 'crypto';
+import { randomInt } from 'crypto';
 import { query } from '../config/database';
 import { encrypt, decrypt } from '../utils/crypto';
 
@@ -62,8 +62,9 @@ export function maskSecrets(text: string | null | undefined, values: string[]): 
 /** A random value for "generate", from characters RouterOS takes in a quoted string. */
 export function generateSecret(length = 24): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  const bytes = randomBytes(length);
-  return [...bytes].map((b) => alphabet[b % alphabet.length]).join('');
+  // randomInt, not a byte modulo 57: that made the first 28 characters a
+  // fifth likelier than the rest (CodeQL js/biased-cryptographic-random).
+  return Array.from({ length }, () => alphabet[randomInt(alphabet.length)]).join('');
 }
 
 export async function listSecrets() {

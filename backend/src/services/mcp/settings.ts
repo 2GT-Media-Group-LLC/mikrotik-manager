@@ -6,6 +6,7 @@
  */
 import { query, queryOne } from '../../config/database';
 import { encrypt, decrypt } from '../../utils/crypto';
+import { stripTrailingSlashes } from '../../utils/trailingSlashes';
 
 export const AI_SETTINGS_KEY = 'ai_connections';
 export type McpAuth = 'oauth' | 'token';
@@ -83,7 +84,7 @@ export async function saveAiSettings(patch: Partial<AiSettings>, newSecret?: str
     if (typeof value !== typeof DEFAULT_AI_SETTINGS[key]) return { error: `${key} has the wrong type.` };
     (merged as unknown as Record<string, unknown>)[key] = typeof value === 'string' ? value.trim() : value;
   }
-  merged.public_url = merged.public_url.replace(/\/+$/, '');
+  merged.public_url = stripTrailingSlashes(merged.public_url);
   if (newSecret !== undefined) merged.oauth_client_secret_encrypted = newSecret ? encrypt(newSecret) : null;
   const problem = settingsProblem(merged);
   if (problem) return { error: problem };

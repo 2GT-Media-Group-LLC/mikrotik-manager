@@ -313,11 +313,13 @@ export function parseZoneInput(body: unknown, live: ZoneLive): { input: ZoneInpu
   }
 
   const intraIn = (c.intra ?? {}) as Record<string, unknown>;
-  const intra: Record<string, boolean> = {};
+  // Keyed by zone names people type: no prototype, so "__proto__" or
+  // "constructor" is only ever a key (CodeQL js/remote-property-injection).
+  const intra: Record<string, boolean> = Object.create(null);
   for (const z of zones) intra[z] = intraIn[z] !== false;
 
   const policiesIn = (c.policies ?? {}) as Record<string, unknown>;
-  const policies: Record<string, ZonePolicy> = {};
+  const policies: Record<string, ZonePolicy> = Object.create(null);
   for (const from of zones) {
     for (const to of [...zones.filter((z) => z !== from), ROUTER]) {
       const key = pairKey(from, to);
@@ -376,7 +378,7 @@ export function parseZoneInput(body: unknown, live: ZoneLive): { input: ZoneInpu
   }
 
   const membersIn = (b.members ?? {}) as Record<string, unknown>;
-  const members: Record<string, string[]> = {};
+  const members: Record<string, string[]> = Object.create(null);
   const owner = new Map<string, string>();
   for (const z of zones) {
     const list = Array.isArray(membersIn[z]) ? [...new Set((membersIn[z] as unknown[]).map(String))] : [];

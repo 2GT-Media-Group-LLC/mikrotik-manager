@@ -13,6 +13,7 @@ import { Client as SshClient, type SFTPWrapper } from 'ssh2';
 import { queryOne } from '../../config/database';
 import { openConfig } from '../../utils/alertChannelSecrets';
 import { s3Put, s3PutBuffer, s3Delete, s3List, type S3Config } from './s3';
+import { stripTrailingSlashes } from '../../utils/trailingSlashes';
 
 export const LOCAL_DIR = path.join(process.env.BACKUPS_DIR || '/app/backups', 'platform');
 /** Files uploaded for a restore. */
@@ -70,7 +71,7 @@ async function sftpSession<T>(d: Destination, fn: (sftp: SFTPWrapper, dir: strin
   const c = d.config as unknown as SftpConfig;
   if (!c.host || !c.username) throw new Error('SFTP: host and username are needed');
   if (!d.secrets.password && !d.secrets.privateKey) throw new Error('SFTP: a password or private key is needed');
-  const dir = (c.directory || '.').replace(/\/+$/, '') || '.';
+  const dir = stripTrailingSlashes(c.directory || '.') || '.';
   let seen = '';
   const conn = new SshClient();
   return new Promise((resolve, reject) => {

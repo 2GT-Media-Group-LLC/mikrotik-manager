@@ -15,6 +15,7 @@ import { query } from '../../config/database';
 import { unseal } from '../../utils/sealed';
 import { summarise, type QueryLogItem } from './adguardLog';
 import { fromPihole, type PiholeQuery } from './piholeLog';
+import { stripTrailingSlashes } from '../../utils/trailingSlashes';
 
 export const POLL_MS = 60_000;
 const PAGE = 1000;
@@ -98,7 +99,7 @@ export async function getJson(url: string, user: string, pass: string, tlsVerify
 
 /** The AdGuard Home query log endpoint for a source's base address. */
 export function querylogUrl(base: string, olderThan?: string, limit = PAGE): string {
-  const u = new URL(base.replace(/\/+$/, '') + '/control/querylog');
+  const u = new URL(stripTrailingSlashes(base) + '/control/querylog');
   u.searchParams.set('limit', String(limit));
   if (olderThan) u.searchParams.set('older_than', olderThan);
   return u.toString();
@@ -127,7 +128,7 @@ async function readAdguard(src: SourceLogin, since: number, limit = PAGE, maxPag
 
 const piholeSessions = new Map<number, { sid: string; until: number }>();
 
-const base = (url: string) => url.replace(/\/+$/, '');
+const base = (url: string) => stripTrailingSlashes(url);
 
 async function piholeLogin(src: SourceLogin): Promise<string> {
   const pass = src.password ? unseal(src.password) : '';

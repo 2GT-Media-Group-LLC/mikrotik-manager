@@ -8,6 +8,7 @@ import { buildGotifyRequest } from '../utils/gotify';
 import { openConfig } from '../utils/alertChannelSecrets';
 import { resolveAlertTarget } from '../utils/alertTarget';
 import { isDeviceInMaintenance } from '../routes/maintenanceWindows';
+import { stripTrailingSlashes } from '../utils/trailingSlashes';
 
 export type AlertEventType =
   | 'device_offline'
@@ -391,7 +392,7 @@ export class AlertService {
     const topic = (cfg.topic as string | undefined)?.trim();
     if (!topic) throw new Error('ntfy channel missing topic');
 
-    const serverUrl = ((cfg.server_url as string | undefined)?.trim() || 'https://ntfy.sh').replace(/\/+$/, '');
+    const serverUrl = stripTrailingSlashes((cfg.server_url as string | undefined)?.trim() || 'https://ntfy.sh');
     let parsed: URL;
     try {
       parsed = new URL(serverUrl);
@@ -420,7 +421,7 @@ export class AlertService {
     };
 
     // Optional deep link back into the manager, when it knows its own address.
-    const clickBase = (cfg.click_url as string | undefined)?.trim().replace(/\/+$/, '');
+    const clickBase = stripTrailingSlashes((cfg.click_url as string | undefined)?.trim() ?? '');
     if (clickBase) {
       body.click = ctx.deviceId != null ? `${clickBase}/devices/${ctx.deviceId}` : clickBase;
     }

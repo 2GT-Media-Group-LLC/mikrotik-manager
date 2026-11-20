@@ -1,3 +1,4 @@
+import { stripTrailingSlashes } from './trailingSlashes';
 /**
  * Gotify (https://gotify.net) notification requests (#169).
  *
@@ -36,7 +37,7 @@ export function buildGotifyRequest(
   message: string,
   deviceId?: number | null
 ): GotifyRequest {
-  const server = String(cfg.server_url ?? '').trim().replace(/\/+$/, '');
+  const server = stripTrailingSlashes(String(cfg.server_url ?? '').trim());
   if (!server) throw new Error('Gotify channel missing server URL');
   let parsed: URL;
   try {
@@ -56,7 +57,7 @@ export function buildGotifyRequest(
     priority: gotifyPriority(eventType),
     extras: { 'client::display': { contentType: 'text/plain' } } as Record<string, unknown>,
   };
-  const click = String(cfg.click_url ?? '').trim().replace(/\/+$/, '');
+  const click = stripTrailingSlashes(String(cfg.click_url ?? '').trim());
   if (click) {
     (body.extras as Record<string, unknown>)['client::notification'] = {
       click: { url: deviceId != null ? `${click}/devices/${deviceId}` : click },

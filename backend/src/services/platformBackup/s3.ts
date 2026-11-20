@@ -8,6 +8,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as https from 'https';
 import * as http from 'http';
+import { stripTrailingSlashes } from '../../utils/trailingSlashes';
 
 export interface S3Config {
   /** e.g. https://s3.us-east-1.amazonaws.com, https://s3.us-west-004.backblazeb2.com */
@@ -62,7 +63,7 @@ export function signV4(i: SignInput): Record<string, string> {
 }
 
 function target(cfg: S3Config, key: string): { url: URL; host: string; path: string } {
-  const base = new URL(cfg.endpoint.replace(/\/+$/, ''));
+  const base = new URL(stripTrailingSlashes(cfg.endpoint));
   const encodedKey = uriEncode(key, true);
   if (cfg.pathStyle) {
     // The bucket itself (a list) is "/bucket"; an object is "/bucket/key".
