@@ -100,7 +100,7 @@ connections are checked again every minute and closed when their session has end
 terminal re-checks the account before it opens a shell. Before 0.24.46 a session kept its
 original role and access for its full 24 hours, whatever happened to the account.
 
-An admin who resets their *own* password from **Settings → Users** is signed out and
+An admin who resets their *own* password from **Settings → Users & Roles** is signed out and
 signs in again with the new one. API tokens are separate and unaffected: revoke those
 under **Settings → Automation → API Tokens**.
 
@@ -194,8 +194,8 @@ These are edited in the Settings UI and take effect without a restart:
 | Change Guard | `change_guard_enabled`, `change_guard_mode`, `change_guard_timeout_sec` | [Change Guard](change-guard.md) |
 | Config Health | `config_health_enabled`, `config_health_interval_min` | [Change Guard](change-guard.md) |
 | Polling | fast / slow / log intervals, MAC scan, spectral and AP scan cadence | Settings → Polling |
-| Config snapshots | `config_snapshot_enabled`, `config_snapshot_interval_min`, `config_snapshot_retention` | Settings → Config History |
-| NetFlow | collector address and port, version, retention, top-N clients | Settings → NetFlow |
+| Config snapshots | `config_snapshot_enabled`, `config_snapshot_interval_min`, `config_snapshot_retention` | Settings → General |
+| NetFlow | collector address and port, version, retention, top-N clients | Network Services → NetFlow |
 | Alerting | rules, thresholds, cooldowns, channels | [Alerting](alerting.md) |
 
 ## Network exposure

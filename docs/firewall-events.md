@@ -82,8 +82,8 @@ view when needed.
 
 ## Retention and clearing
 
-Firewall packet logs have a separate retention setting under **Settings → Data
-Retention**. The default firewall log retention is **7 days**.
+Firewall packet logs have a separate retention setting under **Settings → General →
+Data Retention**. The default firewall log retention is **7 days**.
 
 Other device events continue to use the normal `retention_events_days` setting.
 

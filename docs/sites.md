@@ -67,7 +67,7 @@ of "all sites" — useful for a fleet-wide search, less so for a dashboard that 
 several unrelated networks.
 
 Pins require an address, which is geocoded via Nominatim when you save it. If
-**Settings → Maps enabled** is off, no geocoding or tile request is made and the map is
+**Settings → Dark Site Mode → Maps and address lookup** is off, no geocoding or tile request is made and the map is
 hidden; addresses are still stored and shown as text.
 
 ## Site address and device locations
