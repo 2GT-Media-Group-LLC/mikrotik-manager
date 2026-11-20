@@ -2003,8 +2003,10 @@ delay rather than a risk.</p>
 <li><strong>Prove the reboot happened</strong> — uptime must have gone <em>backwards</em></li>
 <li><strong>Verify the version</strong> — the device must report exactly the version that was installed</li>
 <li><strong>RouterBOOT</strong> (optional) — a second flash and a second reboot. It waits for the device
-   to settle after the first reboot and retries its first connection, then proves the second
-   reboot the same way as step 5 before reading the bootloader version</li>
+   to settle after the first reboot and retries its first connection. A changed bootloader
+   version proves the reboot happened; otherwise it compares uptime with the earlier reading
+   and elapsed time. If the device is still running after two minutes, it asks it to reboot
+   once more. It verifies the bootloader against the target version</li>
 <li><strong>Post-upgrade commands</strong> (optional, #163). <strong>Then run</strong> on the rollout picks a command
    template from the Templates page; its commands are copied into the rollout when it's
    created, so editing the template later doesn't change it. They run over SSH under Change
