@@ -2037,7 +2037,7 @@ session ends straight away when:</p>
 connections are checked again every minute and closed when their session has ended, and a
 terminal re-checks the account before it opens a shell. Before 0.24.46 a session kept its
 original role and access for its full 24 hours, whatever happened to the account.</p>
-<p>An admin who resets their <em>own</em> password from <strong>Settings → Users</strong> is signed out and
+<p>An admin who resets their <em>own</em> password from <strong>Settings → Users &amp; Roles</strong> is signed out and
 signs in again with the new one. API tokens are separate and unaffected: revoke those
 under <strong>Settings → Automation → API Tokens</strong>.</p>
 <h2 id="secret-management-self-healing">Secret management (self-healing)<a class="headerlink" href="#secret-management-self-healing" title="Permanent link">&para;</a></h2>
@@ -2137,12 +2137,12 @@ if you'd rather back up by hand.</p>
 <tr>
 <td>Config snapshots</td>
 <td><code>config_snapshot_enabled</code>, <code>config_snapshot_interval_min</code>, <code>config_snapshot_retention</code></td>
-<td>Settings → Config History</td>
+<td>Settings → General</td>
 </tr>
 <tr>
 <td>NetFlow</td>
 <td>collector address and port, version, retention, top-N clients</td>
-<td>Settings → NetFlow</td>
+<td>Network Services → NetFlow</td>
 </tr>
 <tr>
 <td>Alerting</td>
