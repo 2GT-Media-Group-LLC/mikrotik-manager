@@ -78,12 +78,12 @@ interface BridgeRow {
   site_id?: number | null;
 }
 
-// GET /api/topology
-router.get('/', async (req: Request, res: Response) => {
-  // Scope the graph to the active site. Links are filtered on their *from*
-  // device: a link out of the site still shows, and resolves to an external
-  // node, which is the honest picture of an uplink to somewhere else (#130).
-  const siteId = activeSite(req);
+/**
+ * The discovered graph for the sites in scope. Links are filtered on their
+ * *from* device: a link out of the site still shows, and resolves to an
+ * external node, which is the honest picture of an uplink to somewhere else (#130).
+ */
+async function mapGraph(siteId: SiteScope) {
   const devFilter = siteScopeDevices(siteId);
   const fromFilter = siteScopeByDevice(siteId, 'tl.from_device_id');
   const ifFilter = siteScopeByDevice(siteId, 'device_id');
@@ -123,6 +123,18 @@ router.get('/', async (req: Request, res: Response) => {
   ]);
 
   const graph = buildTopology(devices, allLinks, [], deviceMacs);
+  return { devices, allLinks, deviceMacs, bridges, graph };
+}
+
+/** The neighbours (ext- ids) on the map of these sites. */
+async function neighboursIn(siteId: SiteScope): Promise<Set<string>> {
+  return new Set((await mapGraph(siteId)).graph.externalNodes.map((n) => n.id));
+}
+
+// GET /api/topology
+router.get('/', async (req: Request, res: Response) => {
+  const siteId = activeSite(req);
+  const { devices, allLinks, deviceMacs, bridges, graph } = await mapGraph(siteId);
 
   // Your own nodes and their links (#147), in the sites in view.
   const nodeFilter = siteScopeDevices(siteId);
@@ -542,6 +554,11 @@ router.put('/neighbours/:extId', requireWrite, async (req: Request, res: Respons
   const name = req.body?.name == null || String(req.body.name).trim() === '' ? null : String(req.body.name).trim().slice(0, 255);
   const kind = req.body?.kind == null || req.body.kind === '' ? null : String(req.body.kind);
   if (kind !== null && !NEIGHBOUR_KINDS.has(kind)) return res.status(400).json({ error: 'Unknown type' });
+  // A site-limited account names only neighbours on its own part of the map,
+  // where it can change things: the name shows on every site's map (P1-7).
+  if (isSiteScoped(req.user) && !(await neighboursIn(writableScope(req))).has(extId)) {
+    return res.status(403).json({ error: "That neighbour isn't on the part of the map you can change." });
+  }
   if (name === null && kind === null) {
     await query(`DELETE FROM topology_neighbour_overrides WHERE ext_id = $1`, [extId]);
   } else {
