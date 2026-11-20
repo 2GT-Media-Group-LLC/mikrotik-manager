@@ -3,6 +3,21 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.75
+
+The fixes in 1.0.29 below, two of them security fixes, and more hardening from the 1.1
+security review.
+
+- **A long version string from a device could stall the manager**
+  ([GHSA-vf5h-hmmw-67wq](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-vf5h-hmmw-67wq)),
+  **site-limited operators could rename neighbours on other sites' maps**
+  ([GHSA-3cq7-qcrg-vqj5](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-3cq7-qcrg-vqj5)), and **RouterBOOT upgrades said a
+  device didn't restart when it had**, from Steven Wilton ([@eskyuu](https://github.com/eskyuu))
+  on [#481](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/481): see 1.0.29.
+- **More hardening**: URLs and paths lose their trailing slashes without a regex that slowed on
+  long runs of them; firewall zone names such as `constructor` are only ever names; and three
+  more log lines can't be given extra lines by what they quote.
+
 ## 1.1.0-beta.74
 
 A security fix, also in 1.0.28, and tighter roles, both from the 1.1 security review.
@@ -1138,6 +1153,32 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.29
+
+Released on Friday 20 November 2026. Two security fixes from the 1.1 security review, and a
+RouterBOOT fix from Steven Wilton ([@eskyuu](https://github.com/eskyuu)); update soon.
+
+- **A long version string from a device could stall the manager**
+  ([GHSA-vf5h-hmmw-67wq](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-vf5h-hmmw-67wq)). The poller compares the RouterBOOT
+  versions a device reports before storing them, and the parser slowed with the square of their
+  length: 200,000 characters held up the web UI, API and polling for about 19 seconds. Real
+  RouterOS doesn't send such a thing, but a fake RouterOS API server added as a device could.
+  Version strings are now cut to 64 characters before they're read.
+- **Site-limited operators could rename neighbours on other sites' maps**
+  ([GHSA-3cq7-qcrg-vqj5](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-3cq7-qcrg-vqj5)). The part of 1.0.28's fix that was
+  missed: the name and type of a discovered neighbour, which show on every site's map. A
+  site-limited account now names only the neighbours on its own part of the map.
+- **RouterBOOT upgrades said a device "didn't restart when asked (twice)" when it had.** The
+  check compared uptime with a reading taken just after the first reboot, so a device that took
+  longer than that to come back from the second looked like it never went down. It now counts
+  the time since that reading, and a changed bootloader version also proves the restart. Thanks to
+  Steven Wilton ([@eskyuu](https://github.com/eskyuu)) for [#481](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/481).
+- **Hardening from the review**: pasted certificates are read in linear time (a 10 MB field of
+  BEGIN lines took a long while), and generated command secrets use every character equally
+  often.
+
+Also in 1.1.0-beta.75.
 
 ## 1.0.28
 
