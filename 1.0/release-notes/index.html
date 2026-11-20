@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1029" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.29
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1028" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1786,6 +1797,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1029" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.29
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1028" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2191,6 +2213,29 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1029">1.0.29<a class="headerlink" href="#1029" title="Permanent link">&para;</a></h2>
+<p>Released on Friday 20 November 2026. Two security fixes from the 1.1 security review, and a
+RouterBOOT fix from Steven Wilton (<a href="https://github.com/eskyuu">@eskyuu</a>); update soon.</p>
+<ul>
+<li><strong>A long version string from a device could stall the manager</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-vf5h-hmmw-67wq">GHSA-vf5h-hmmw-67wq</a>). The poller compares the RouterBOOT
+  versions a device reports before storing them, and the parser slowed with the square of their
+  length: 200,000 characters held up the web UI, API and polling for about 19 seconds. Real
+  RouterOS doesn't send such a thing, but a fake RouterOS API server added as a device could.
+  Version strings are now cut to 64 characters before they're read.</li>
+<li><strong>Site-limited operators could rename neighbours on other sites' maps</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-3cq7-qcrg-vqj5">GHSA-3cq7-qcrg-vqj5</a>). The part of 1.0.28's fix that was
+  missed: the name and type of a discovered neighbour, which show on every site's map. A
+  site-limited account now names only the neighbours on its own part of the map.</li>
+<li><strong>RouterBOOT upgrades said a device "didn't restart when asked (twice)" when it had.</strong> The
+  check compared uptime with a reading taken just after the first reboot, so a device that took
+  longer than that to come back from the second looked like it never went down. It now counts
+  the time since that reading, and a changed bootloader version also proves the restart. Thanks to
+  Steven Wilton (<a href="https://github.com/eskyuu">@eskyuu</a>) for <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/481">#481</a>.</li>
+<li><strong>Hardening from the review</strong>: pasted certificates are read in linear time (a 10 MB field of
+  BEGIN lines took a long while), and generated command secrets use every character equally
+  often.</li>
+</ul>
 <h2 id="1028">1.0.28<a class="headerlink" href="#1028" title="Permanent link">&para;</a></h2>
 <p>Released on Friday 20 November 2026. A security fix; update soon if you use per-site roles.</p>
 <ul>
