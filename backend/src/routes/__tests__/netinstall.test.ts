@@ -1,8 +1,9 @@
 jest.mock('../../config/database');
 jest.mock('../../middleware/site', () => ({ activeSite: () => null }));
+// As requireSiteAdmin: the role deviceSiteAccess left for the router's site must be admin.
 jest.mock('../../middleware/auth', () => ({
-  requireWrite: (req: { user?: { role: string } }, res: { status: (n: number) => { json: (b: unknown) => void } }, next: () => void) =>
-    (req.user?.role === 'viewer' ? res.status(403).json({ error: 'viewer' }) : next()),
+  requireSiteAdmin: (req: { user?: { role: string } }, res: { status: (n: number) => { json: (b: unknown) => void } }, next: () => void) =>
+    (req.user?.role !== 'admin' ? res.status(403).json({ error: 'Admin access required' }) : next()),
 }));
 
 const live = {
@@ -34,7 +35,7 @@ import netinstallRoutes from '../netinstall';
 import { query, queryOne } from '../../config/database';
 
 const MiB = 1024 * 1024;
-const app = (role = 'operator') => {
+const app = (role = 'admin') => {
   const a = express();
   a.use(express.json());
   a.use((req, _res, next) => { (req as express.Request & { user?: unknown }).user = { userId: 1, username: 'u', role } as never; next(); });
@@ -112,8 +113,19 @@ describe('POST /package', () => {
     expect(ok.body.started).toBe(true);
   });
 
-  it('is refused to a viewer', async () => {
+  it('is refused to a viewer and an operator: Netinstall can wipe whatever netboots', async () => {
     expect((await request(app('viewer')).post('/package?deviceId=8').send({ action: 'install', confirm: true })).status).toBe(403);
+    for (const call of [
+      request(app('operator')).post('/package?deviceId=8').send({ action: 'install', confirm: true }),
+      request(app('operator')).post('/entry?deviceId=8').send({ interface: 'ether1', wait: true }),
+      request(app('operator')).put('/entry/*1?deviceId=8').send({ wait: true }),
+      request(app('operator')).delete('/entry/*1?deviceId=8'),
+      request(app('operator')).post('/cache?deviceId=8').send({ arch: 'arm64' }),
+      request(app('operator')).delete('/cache?deviceId=8&path=NetinstallCache/linux.arm64'),
+      request(app('operator')).put('/settings?deviceId=8').send({ cache_directory: 'NetinstallCache' }),
+      request(app('operator')).post('/devices/install?deviceId=8').send({ mac: '02:23:45:67:89:BB' }),
+      request(app('operator')).post('/devices/clear?deviceId=8').send({}),
+    ]) expect((await call).status).toBe(403);
   });
 });
 

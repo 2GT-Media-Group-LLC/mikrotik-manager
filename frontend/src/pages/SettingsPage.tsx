@@ -71,7 +71,6 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
-  const canWrite = user?.role !== 'viewer';
   // Timezone for scheduled work. The browser's zone is offered as a shortcut
   // because it is almost always what the operator means.
   // UTC is put first explicitly. Intl.supportedValuesOf('timeZone') lists 418
@@ -94,6 +93,9 @@ export default function SettingsPage() {
   }, []);
 
   const siteScoped = useIsSiteScoped();
+  // Who sees the fleet's settings: admins change them, operators read them.
+  // Viewers and accounts limited to particular sites get their own account only.
+  const settingsReader = (isAdmin || user?.role === 'operator') && !siteScoped;
   // The tab is in the address (?tab=sshkeys), so other pages can link to one
   // and a reload stays where it was.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -123,8 +125,8 @@ export default function SettingsPage() {
   const { data: users = [] } = useQuery({
     queryKey: ['settings-users'],
     queryFn: () => settingsApi.getUsers().then((r) => r.data as User[]),
-    // Fleet admins only; the server refuses everyone else.
-    enabled: isAdmin && !siteScoped,
+    // Fleet admins, and operators read-only; the server refuses everyone else.
+    enabled: settingsReader,
   });
 
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'viewer' as UserRole });
@@ -270,7 +272,7 @@ export default function SettingsPage() {
   const { data: acmeSettings, isLoading: acmeLoading, error: acmeLoadError } = useQuery({
     queryKey: ['cert-acme'],
     queryFn: () => certApi.getAcme().then((r) => r.data),
-    enabled: activeTab === 'certificate' && isAdmin,
+    enabled: activeTab === 'certificate' && settingsReader,
   });
   const [acmeForm, setAcmeForm] = useState({ domain: '', email: '', server: '' });
   const [acmeError, setAcmeError] = useState('');
@@ -487,12 +489,12 @@ export default function SettingsPage() {
       tabs: [
         { key: 'general' as const, label: 'General', icon: Settings },
         { key: 'users' as const, label: 'Users & Roles', icon: Users },
-        ...(isAdmin ? [{ key: 'sso' as const, label: 'SSO / OIDC', icon: LogIn }] : []),
-        ...(isAdmin ? [{ key: 'ai' as const, label: 'AI Connections', icon: Bot }] : []),
+        { key: 'sso' as const, label: 'SSO / OIDC', icon: LogIn },
+        { key: 'ai' as const, label: 'AI Connections', icon: Bot },
         { key: 'certificate' as const, label: 'Certificate', icon: Lock },
-        ...(isAdmin ? [{ key: 'audit' as const, label: 'Audit Log', icon: ClipboardList }] : []),
-        ...(isAdmin ? [{ key: 'poller' as const, label: 'Polling', icon: Activity }] : []),
-        ...(isAdmin ? [{ key: 'platformbackup' as const, label: 'Backup & Restore', icon: HardDrive }] : []),
+        { key: 'audit' as const, label: 'Audit Log', icon: ClipboardList },
+        { key: 'poller' as const, label: 'Polling', icon: Activity },
+        { key: 'platformbackup' as const, label: 'Backup & Restore', icon: HardDrive },
         // Its own entry rather than a card inside General, where it sat six
         // cards down and was not found (#159).
         { key: 'darksite' as const, label: 'Dark Site Mode', icon: Moon },
@@ -511,12 +513,10 @@ export default function SettingsPage() {
         { key: 'alerting' as const, label: 'Alerting', icon: Bell },
         { key: 'automation' as const, label: 'Automation', icon: Zap },
         { key: 'firewalllogs' as const, label: 'Firewall Logs', icon: Flame },
-        // AdGuard Home sources (#366): the manager calls them with a saved login, so fleet admins only.
-        ...(isAdmin && !user?.siteRoles ? [{ key: 'dns' as const, label: 'DNS Query Log', icon: Waypoints }] : []),
-        ...(isAdmin ? [
-          { key: 'tags' as const, label: 'Tags', icon: ShieldCheck },
-          { key: 'maintenance' as const, label: 'Maintenance', icon: ShieldAlert },
-        ] : []),
+        // AdGuard Home sources (#366): the manager calls them with a saved login, so only fleet admins change them.
+        { key: 'dns' as const, label: 'DNS Query Log', icon: Waypoints },
+        { key: 'tags' as const, label: 'Tags', icon: ShieldCheck },
+        { key: 'maintenance' as const, label: 'Maintenance', icon: ShieldAlert },
       ],
     },
   ];
@@ -529,7 +529,7 @@ export default function SettingsPage() {
   });
   const passwordLogin = loginHints?.password_login !== false;
   const visibleGroups = passwordLogin ? allTabGroups : allTabGroups.filter((g) => g.label !== 'My Account');
-  const tabGroups = siteScoped
+  const tabGroups = !settingsReader
     ? [{ label: 'My Account', tabs: [
         { key: 'general' as const, label: 'General', icon: Settings },
         ...(passwordLogin ? [{ key: 'security' as const, label: 'My Password', icon: Key }] : []),
@@ -592,8 +592,14 @@ export default function SettingsPage() {
 
         <div className="flex-1 min-w-0 w-full space-y-4">
 
+      {settingsReader && !isAdmin && (
+        <p className="text-sm text-gray-500 dark:text-slate-400">
+          You can see these settings but not change them. Only an administrator can.
+        </p>
+      )}
+
       {/* ── General ── */}
-      {activeTab === 'general' && (siteScoped ? (
+      {activeTab === 'general' && (!settingsReader ? (
         <div className="max-w-2xl"><TimeFormatSetting /></div>
       ) : (
         // Two flowing columns on wide screens. A single 512px column of eight
@@ -602,7 +608,7 @@ export default function SettingsPage() {
         // Appearance does not leave a hole the height of its taller neighbour.
         <div className="max-w-6xl xl:columns-2 xl:gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
           <TimeFormatSetting />
-          {isAdmin && <EncryptionKeyCard />}
+          <fieldset disabled={!isAdmin} className="min-w-0"><EncryptionKeyCard /></fieldset>
           <AppearanceCard />
 
           <div className="card p-5">
@@ -1126,10 +1132,10 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {activeTab === 'dns' && isAdmin && !user?.siteRoles && (
-        <div className="max-w-2xl">
+      {activeTab === 'dns' && settingsReader && (
+        <fieldset disabled={!isAdmin} className="max-w-2xl min-w-0">
           <DnsSourcesCard />
-        </div>
+        </fieldset>
       )}
 
       {activeTab === 'darksite' && (
@@ -1143,16 +1149,18 @@ export default function SettingsPage() {
           <div className="card p-5">
             <PollerHealthCard />
           </div>
-          <PollModulesCard
-            settings={settings}
-            onChange={(data) => updateSettingsMutation.mutate(data)}
-            saving={updateSettingsMutation.isPending}
-          />
-          <FirmwareTimeoutCard
-            settings={settings}
-            onSave={(data) => updateSettingsMutation.mutate(data)}
-            saving={updateSettingsMutation.isPending}
-          />
+          <fieldset disabled={!isAdmin} className="space-y-4 min-w-0">
+            <PollModulesCard
+              settings={settings}
+              onChange={(data) => updateSettingsMutation.mutate(data)}
+              saving={updateSettingsMutation.isPending}
+            />
+            <FirmwareTimeoutCard
+              settings={settings}
+              onSave={(data) => updateSettingsMutation.mutate(data)}
+              saving={updateSettingsMutation.isPending}
+            />
+          </fieldset>
         </div>
       )}
 
@@ -1340,7 +1348,9 @@ export default function SettingsPage() {
       {/* ── Device Credential Presets ── */}
 
       {activeTab === 'sshkeys' && isAdmin && <FleetSshKeysCard />}
-      {activeTab === 'platformbackup' && isAdmin && <PlatformBackupSettings />}
+      {activeTab === 'platformbackup' && settingsReader && (
+        <fieldset disabled={!isAdmin} className="min-w-0"><PlatformBackupSettings /></fieldset>
+      )}
 
       {/* ── My Password ── */}
       {activeTab === 'security' && !passwordLogin && (
@@ -1591,8 +1601,8 @@ export default function SettingsPage() {
             )}
           </div>
 
-          {isAdmin && (
-            <div className="card p-5 space-y-4">
+          {settingsReader && (
+            <fieldset disabled={!isAdmin} className="card p-5 space-y-4 min-w-0">
               <div>
                 <h3 className="font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
                   <Globe className="w-4 h-4 text-blue-500" />
@@ -1677,10 +1687,10 @@ export default function SettingsPage() {
                 </form>
               )}
               {acmeSettings?.domain.trim() && <AcmeAttemptStatus />}
-            </div>
+            </fieldset>
           )}
 
-          {isAdmin && <AcmeCaBundleCard />}
+          {settingsReader && <fieldset disabled={!isAdmin} className="min-w-0"><AcmeCaBundleCard /></fieldset>}
 
           {/* Regenerate self-signed */}
           <div className="card p-5">
@@ -1907,8 +1917,8 @@ export default function SettingsPage() {
 
       {/* ── Alerting ── */}
       {activeTab === 'alerting' && (
-        // Read-only for viewers: every change here needs write access (U10).
-        <fieldset disabled={!canWrite} className="space-y-4 min-w-0">
+        // Read-only for operators: every change here is an admin's (U10).
+        <fieldset disabled={!isAdmin} className="space-y-4 min-w-0">
 
           {/* Hardware health limit (#168) */}
           <div className="card p-5">
@@ -1962,11 +1972,11 @@ export default function SettingsPage() {
                       </td>
                       <td className="py-2.5 pr-4 text-center">
                         <button
-                          onClick={() => canWrite && updateRuleMutation.mutate({ type: rule.event_type, data: { enabled: !rule.enabled, threshold: rule.threshold, cooldown_min: rule.cooldown_min } })}
-                          disabled={!canWrite}
+                          onClick={() => isAdmin && updateRuleMutation.mutate({ type: rule.event_type, data: { enabled: !rule.enabled, threshold: rule.threshold, cooldown_min: rule.cooldown_min } })}
+                          disabled={!isAdmin}
                           className={clsx(
                             'relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors',
-                            canWrite ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
+                            isAdmin ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
                             rule.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-slate-600'
                           )}
                         >
@@ -1980,7 +1990,7 @@ export default function SettingsPage() {
                             value={rule.threshold ?? ''}
                             onCommit={(v) => updateRuleMutation.mutate({ type: rule.event_type, data: { enabled: rule.enabled, threshold: v, cooldown_min: rule.cooldown_min } })}
                             min="1"
-                            disabled={!canWrite}
+                            disabled={!isAdmin}
                           />
                         ) : (
                           <span className="text-gray-300 dark:text-slate-600">—</span>
@@ -1992,7 +2002,7 @@ export default function SettingsPage() {
                           value={rule.cooldown_min}
                           onCommit={(v) => updateRuleMutation.mutate({ type: rule.event_type, data: { enabled: rule.enabled, threshold: rule.threshold, cooldown_min: v } })}
                           min="1"
-                          disabled={!canWrite}
+                          disabled={!isAdmin}
                         />
                       </td>
                     </tr>
@@ -2047,7 +2057,7 @@ export default function SettingsPage() {
                 <h3 className="font-semibold text-gray-900 dark:text-white">Alert Channels</h3>
                 <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Where to send alerts — email, Slack, Discord, or Telegram.</p>
               </div>
-              {canWrite && (
+              {isAdmin && (
                 <button
                   className="btn-primary text-xs flex items-center gap-1"
                   onClick={() => { setChForm(EMPTY_FORM); setChError(''); setChModal({ mode: 'add' }); }}
@@ -2095,7 +2105,7 @@ export default function SettingsPage() {
                           )}
                           {chTestStatus[ch.id] === 'testing' ? 'Testing…' : chTestStatus[ch.id] === 'ok' ? 'Sent!' : chTestStatus[ch.id] === 'err' ? 'Failed' : 'Test'}
                         </button>
-                        {canWrite && (
+                        {isAdmin && (
                           <button
                             className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-400 hover:text-blue-500 transition-colors"
                             title="Edit channel"
@@ -2108,7 +2118,7 @@ export default function SettingsPage() {
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        {canWrite && (
+                        {isAdmin && (
                           <button
                             className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-400 hover:text-red-500 transition-colors"
                             title="Delete channel"
@@ -2391,12 +2401,12 @@ export default function SettingsPage() {
       )}
       {/* ── Automation (API tokens, webhooks, scheduled reports) ── */}
       {activeTab === 'automation' && (
-        <AutomationSettings isAdmin={isAdmin} />
+        <AutomationSettings isAdmin={isAdmin} canRead={settingsReader} />
       )}
       {activeTab === 'sso' && (
-        <OidcSettings isAdmin={isAdmin} />
+        <OidcSettings isAdmin={isAdmin} canRead={settingsReader} />
       )}
-      {activeTab === 'ai' && <AiConnectionsSettings isAdmin={isAdmin} />}
+      {activeTab === 'ai' && <AiConnectionsSettings isAdmin={isAdmin} canRead={settingsReader} />}
       {/* ── Tags ── */}
       {activeTab === 'tags' && (
         <div className="space-y-4">

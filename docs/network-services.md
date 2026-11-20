@@ -230,6 +230,10 @@ needs RouterOS 7.24 or later, and isn't made for SMIPS devices. The device being
 on the same layer 2 segment as that router, and etherboot to it. **An install reformats that
 device**: what's kept depends on the entry (below).
 
+Because of that, every change here (installing or removing the package, entries, the cache,
+starting an install) needs an admin for the router's site: a fleet admin, or a site admin there.
+Operators and viewers see the page read-only.
+
 The page lists the devices in view in three groups:
 
 - **Netinstall servers**: devices with the package installed. Each one is read live: its entries,

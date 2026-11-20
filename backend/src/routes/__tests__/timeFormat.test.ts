@@ -10,6 +10,8 @@ jest.mock('../../middleware/auth', () => ({
     if (req.user?.role !== 'admin' || req.user.siteRoles) { res.status(403).json({ error: 'Forbidden' }); return; }
     next();
   },
+  requireSettingsRead: (_req: unknown, res: import('express').Response) => { res.status(403).json({ error: 'Forbidden' }); },
+  canReadSettings: (user?: { role: string; siteRoles?: unknown }) => !!user && user.role !== 'viewer' && !user.siteRoles,
 }));
 jest.mock('../../services/netflow/NetflowCollector', () => ({ netflowCollector: { reconcile: jest.fn() } }));
 jest.mock('../../services/encryptedData', () => ({ encryptionStatus: jest.fn(), reencryptAll: jest.fn() }));

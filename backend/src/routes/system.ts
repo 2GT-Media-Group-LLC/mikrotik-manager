@@ -2,7 +2,7 @@ import { compareMtmVersions, releaseBranch } from '../utils/mtmVersion';
 import { Router } from 'express';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { requireAuth, requireWrite, fleetOnly } from '../middleware/auth';
+import { requireAuth, requireAdmin, fleetOnly } from '../middleware/auth';
 import { query } from '../config/database';
 import { DARK_SITE_FEATURES, DARK_SITE_KEYS, internetAllowed } from '../utils/darkSite';
 import type { PollerService } from '../services/PollerService';
@@ -102,7 +102,7 @@ router.get('/poller', fleetOnly, async (_req, res) => {
  * whatever is still due on its next tick, so the cost is at most one interval of
  * freshness.
  */
-router.post('/poller/drain', requireWrite, fleetOnly, async (_req, res) => {
+router.post('/poller/drain', requireAdmin, fleetOnly, async (_req, res) => {
   try {
     if (!pollerService) return res.status(503).json({ error: 'Poller not started' });
     const drained = await pollerService.drainQueues();

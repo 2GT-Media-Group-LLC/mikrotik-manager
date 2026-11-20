@@ -254,6 +254,30 @@ export function requireAdmin<P = ParamsDictionary>(req: Request<P>, res: Respons
 }
 
 /**
+ * May read the fleet's settings: a fleet admin, or a fleet operator, who sees
+ * them read-only. Viewers and accounts limited to particular sites see only
+ * their own account (secrets stay masked either way; every change still needs
+ * requireAdmin).
+ */
+export function canReadSettings(user: AuthPayload | undefined): boolean {
+  return !!user && (user.role === 'admin' || user.role === 'operator') && !isSiteScoped(user);
+}
+
+export function requireSettingsRead<P = ParamsDictionary>(req: Request<P>, res: Response, next: NextFunction): void {
+  if (!canReadSettings(req.user)) {
+    res.status(403).json({ error: 'Settings are for fleet admins and operators.' });
+    return;
+  }
+  next();
+}
+
+/** For a settings router: fleet operators read it, only a fleet admin changes anything. */
+export function settingsReadAdminWrite<P = ParamsDictionary>(req: Request<P>, res: Response, next: NextFunction): void {
+  if (req.method === 'GET' || req.method === 'HEAD') requireSettingsRead(req, res, next);
+  else requireAdmin(req, res, next);
+}
+
+/**
  * An admin for the device or site the request is about: a fleet admin, or a
  * site admin whose role deviceSiteAccess has already narrowed to that site.
  */

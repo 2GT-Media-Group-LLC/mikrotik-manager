@@ -15,7 +15,7 @@ import { randomBytes, createHash } from 'crypto';
 import { redis } from '../config/redis';
 import { queryOne } from '../config/database';
 import { sessionResponse } from '../utils/sessionResponse';
-import { requireAuth, requireAdmin } from '../middleware/auth';
+import { requireAuth, requireAdmin, requireSettingsRead } from '../middleware/auth';
 import { rateLimitRedis } from '../middleware/rateLimitRedis';
 import {
   loadOidcConfig, saveOidcConfig, maskedConfig, APP_ROLES, type AppRole, type OidcConfig,
@@ -160,7 +160,7 @@ router.post(
 );
 
 // ─── Admin: read config (secret masked) ─────────────────────────────────────────
-router.get('/config', requireAuth, requireAdmin, async (req, res) => {
+router.get('/config', requireAuth, requireSettingsRead, async (req, res) => {
   const config = await loadOidcConfig();
   res.json({ ...maskedConfig(config), redirect_uri: redirectUriFor(req, config) });
 });

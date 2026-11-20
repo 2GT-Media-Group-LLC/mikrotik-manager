@@ -197,7 +197,7 @@ export default function NetworkServicesNetflowPage() {
         </div>
         <div className="p-5 space-y-4">
           <div className="flex items-center gap-3">
-            <Toggle checked={enabled} onChange={handleListenerToggle} disabled={!canWrite || saving} />
+            <Toggle checked={enabled} onChange={handleListenerToggle} disabled={!isFleetAdmin || saving} />
             <div>
               <div className="text-sm font-medium text-gray-700 dark:text-slate-200">Enable NetFlow collector</div>
               <p className="text-xs text-gray-400 dark:text-slate-500">
@@ -212,7 +212,7 @@ export default function NetworkServicesNetflowPage() {
                 Collector Address <span className="text-red-500">*</span>
               </label>
               <input className="input w-full" value={address} onChange={e => setAddress(e.target.value)}
-                placeholder="192.168.1.100" disabled={!canWrite} />
+                placeholder="192.168.1.100" disabled={!isFleetAdmin} />
               <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">
                 The IP of this server as reachable by your devices (the Docker host IP, not the container).
               </p>
@@ -220,14 +220,14 @@ export default function NetworkServicesNetflowPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-200 mb-1">Port</label>
               <input type="number" className="input w-full" value={port} onChange={e => setPort(e.target.value)}
-                min="1" max="65535" disabled={!canWrite} />
+                min="1" max="65535" disabled={!isFleetAdmin} />
               <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">
                 Must match the host port mapping (NETFLOW_PORT, default 2055).
               </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-200 mb-1">Version</label>
-              <select className="input w-full" value={version} onChange={e => setVersion(e.target.value)} disabled={!canWrite}>
+              <select className="input w-full" value={version} onChange={e => setVersion(e.target.value)} disabled={!isFleetAdmin}>
                 <option value="9">NetFlow v9</option>
                 <option value="ipfix">IPFIX</option>
               </select>
@@ -271,7 +271,7 @@ export default function NetworkServicesNetflowPage() {
           )}
 
           <div className="flex items-center gap-3">
-            {canWrite && (
+            {isFleetAdmin && (
               <button onClick={() => saveCollectorSettings()} disabled={saving}
                 className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
                 <Save className="w-3.5 h-3.5" />{saving ? 'Saving…' : 'Save Settings'}

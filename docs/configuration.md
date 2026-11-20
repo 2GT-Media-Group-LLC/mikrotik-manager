@@ -251,6 +251,15 @@ These are edited in the Settings UI and take effect without a restart:
 | NetFlow | collector address and port, version, retention, top-N clients | Settings → NetFlow |
 | Alerting | rules, thresholds, cooldowns, channels | [Alerting](alerting.md) |
 
+### Who sees Settings
+
+- **Admins** (fleet-wide) see and change everything.
+- **Operators** (fleet-wide) see every setting, read-only, apart from the SSH Keys tool.
+  This includes alerting, webhooks and report schedules, which operators could change before
+  1.1. Secrets stay masked.
+- **Viewers**, and any account limited to particular sites, see only their own account:
+  time format and password.
+
 ## Network exposure
 
 The manager holds the admin credentials for every device it manages, so keep it off the

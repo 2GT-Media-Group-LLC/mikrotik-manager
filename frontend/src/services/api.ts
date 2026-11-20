@@ -3467,6 +3467,7 @@ export type NetinstallSupport = 'installed' | 'available' | 'too-old' | 'unsuppo
 export interface NetinstallFleetDevice {
   id: number; name: string; status: string; device_type: string; model: string | null;
   ros_version: string | null; architecture: string | null; support: NetinstallSupport;
+  site_id: number | null;
   /** A package install or removal sent from the page, until the device shows it. */
   package_change: 'install' | 'remove' | null;
 }

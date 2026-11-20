@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { HardDriveDownload, RefreshCw, AlertTriangle, Plus, Pencil, Trash2, Power, X, Check, Download, PackagePlus, PackageMinus, Lock } from 'lucide-react';
 import clsx from 'clsx';
 import { netinstallApi, type NetinstallDeviceView, type NetinstallFleetDevice, type RosRow } from '../services/api';
-import { useCanWrite } from '../hooks/useCanWrite';
+import { useAdminIn, useIsAdminIn } from '../hooks/useCanWrite';
 import { useGuardedWrite, GuardedWriteUi } from '../components/ChangeGuardDialog';
 import ReviewChangesButton from '../components/common/ReviewChangesButton';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
@@ -339,7 +339,9 @@ function Flags({ e }: { e: RosRow }) {
 
 function ServerCard({ device, onPackage }: { device: NetinstallFleetDevice; onPackage: (d: NetinstallFleetDevice, action: 'install' | 'remove') => void }) {
   const qc = useQueryClient();
-  const canWrite = useCanWrite();
+  // Netinstall can wipe whatever netboots on that network, so every change is
+  // for an admin of the router's site; operators and viewers see it read-only.
+  const canWrite = useIsAdminIn(device.site_id);
   const guard = useGuardedWrite();
   const [entryForm, setEntryForm] = useState<RosRow | 'new' | null>(null);
   const [installing, setInstalling] = useState<NetinstallDeviceView['devices'][number] | null>(null);
@@ -575,7 +577,7 @@ const SUPPORT_TEXT: Record<string, string> = {
  */
 export default function NetworkServicesNetinstallPage() {
   const qc = useQueryClient();
-  const canWrite = useCanWrite();
+  const adminIn = useAdminIn();
   const [pkg, setPkg] = useState<{ device: NetinstallFleetDevice; action: 'install' | 'remove' } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showOthers, setShowOthers] = useState(false);
@@ -679,7 +681,7 @@ export default function NetworkServicesNetinstallPage() {
                 <DeviceTypePill type={d.device_type} />
                 <Link to={`/devices/${d.id}`} className="cell-primary hover:underline">{d.name}</Link>
                 <span className="text-xs text-gray-400">{[d.model, d.ros_version, d.architecture].filter(Boolean).join(' · ')}</span>
-                {canWrite && (
+                {adminIn(d.site_id) && (
                   <button onClick={() => setPkg({ device: d, action: 'install' })} disabled={d.status !== 'online'}
                     title={d.status !== 'online' ? `${d.name} is ${d.status}` : 'Install the netinstall package (reboots the device)'}
                     className="ml-auto inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50 disabled:no-underline">

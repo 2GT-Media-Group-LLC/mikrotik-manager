@@ -6,7 +6,7 @@
 jest.mock('../../config/database');
 jest.mock('../../middleware/auth', () => ({
   requireAuth: (_req: unknown, _res: unknown, next: () => void) => next(),
-  requireWrite: (_req: unknown, _res: unknown, next: () => void) => next(),
+  requireAdmin: (_req: unknown, _res: unknown, next: () => void) => next(),
   fleetOnly: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 

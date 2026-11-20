@@ -6,7 +6,7 @@ import { readFile, writeFile, unlink, rename } from 'fs/promises';
 import { existsSync } from 'fs';
 import crypto from 'crypto';
 import path from 'path';
-import { requireAuth, requireAdmin } from '../middleware/auth';
+import { requireAuth, requireAdmin, requireSettingsRead } from '../middleware/auth';
 
 const router = Router();
 router.use(requireAuth);
@@ -120,12 +120,12 @@ function acquireInstallLock(): Promise<() => void> {
 const RELOAD_SIGNAL = path.join(CERTS_DIR, '.reload');
 
 // GET /api/cert/acme — ACME settings for the manager's HTTPS certificate
-router.get('/acme', requireAdmin, async (_req, res) => {
+router.get('/acme', requireSettingsRead, async (_req, res) => {
   res.json(await readAcmeSettings());
 });
 
 // GET /api/cert/acme/status — last completed Certbot attempt
-router.get('/acme/status', requireAdmin, async (_req, res) => {
+router.get('/acme/status', requireSettingsRead, async (_req, res) => {
   const settings = await readAcmeSettings();
   if (!settings.domain.trim()) return res.json({ lastAttempt: null });
   let contents: string;
@@ -176,7 +176,7 @@ router.delete('/acme', requireAdmin, async (_req, res) => {
 });
 
 // GET /api/cert/acme/ca-bundle — whether a custom ACME trust bundle is installed
-router.get('/acme/ca-bundle', requireAdmin, async (_req, res) => {
+router.get('/acme/ca-bundle', requireSettingsRead, async (_req, res) => {
   try {
     await readFile(ACME_CA_BUNDLE_PATH);
     return res.json({ installed: true, readOnly: false });

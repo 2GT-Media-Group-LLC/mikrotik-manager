@@ -7,20 +7,25 @@ import type { UserRole } from '../../types';
 const ROLES: UserRole[] = ['viewer', 'operator', 'admin'];
 type GroupRow = { group: string; role: UserRole };
 
-export default function OidcSettings({ isAdmin }: { isAdmin: boolean }) {
+/** Fleet operators see the setup read-only; only an admin changes it. */
+export default function OidcSettings({ isAdmin, canRead }: { isAdmin: boolean; canRead: boolean }) {
   const { data } = useQuery({
     queryKey: ['oidc-config'],
     queryFn: () => oidcApi.getConfig().then((r) => r.data),
-    enabled: isAdmin,
+    enabled: canRead,
   });
 
-  if (!isAdmin) {
+  if (!canRead) {
     return <div className="card p-6 text-sm text-gray-400 dark:text-slate-500">Single sign-on can only be configured by administrators.</div>;
   }
   if (!data) return <div className="card p-6 text-sm text-gray-400 dark:text-slate-500">Loading…</div>;
 
   // Remount when the loaded config identity changes so form state re-initializes.
-  return <OidcForm key={data.redirect_uri} initial={data} />;
+  return (
+    <fieldset disabled={!isAdmin} className="min-w-0">
+      <OidcForm key={data.redirect_uri} initial={data} />
+    </fieldset>
+  );
 }
 
 function OidcForm({ initial }: { initial: OidcConfigView }) {

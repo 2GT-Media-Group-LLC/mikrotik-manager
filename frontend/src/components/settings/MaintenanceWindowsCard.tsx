@@ -63,7 +63,6 @@ export default function MaintenanceWindowsCard({ isAdmin, timeZone }: { isAdmin:
   const { data: devices = [] } = useQuery({
     queryKey: ['devices'],
     queryFn: () => devicesApi.list().then((r) => r.data),
-    enabled: isAdmin,
   });
   const deviceName = (id: number) => devices.find((d) => d.id === id)?.name ?? `#${id}`;
 

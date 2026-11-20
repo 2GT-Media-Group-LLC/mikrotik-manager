@@ -13,6 +13,11 @@ jest.mock('../../middleware/auth', () => ({
     if (req.headers['x-test-role'] !== 'admin') { res.status(403).json({ error: 'Forbidden' }); return; }
     next();
   },
+  // Fleet operators read the settings; only an admin changes them.
+  requireSettingsRead: (req: import('express').Request, res: import('express').Response, next: () => void) => {
+    if (!['admin', 'operator'].includes(String(req.headers['x-test-role']))) { res.status(403).json({ error: 'Forbidden' }); return; }
+    next();
+  },
 }));
 
 import express from 'express';
@@ -47,13 +52,14 @@ describe('manager ACME settings', () => {
   });
   afterAll(() => { process.env = originalEnv; });
 
-  it('requires an administrator to read or change the settings', async () => {
+  it('lets an operator read the settings, and only an administrator change them', async () => {
     expect((await request(app()).get('/api/cert/acme')).status).toBe(401);
     expect((await request(app()).get('/api/cert/acme').set('x-test-role', 'viewer')).status).toBe(403);
     expect((await request(app()).put('/api/cert/acme').set('x-test-role', 'viewer').send(valid)).status).toBe(403);
+    expect((await request(app()).put('/api/cert/acme').set('x-test-role', 'operator').send(valid)).status).toBe(403);
   });
 
-  it('requires an administrator to read the last Certbot attempt', async () => {
+  it('keeps the last Certbot attempt from viewers', async () => {
     expect((await request(app()).get('/api/cert/acme/status')).status).toBe(401);
     expect((await request(app()).get('/api/cert/acme/status').set('x-test-role', 'viewer')).status).toBe(403);
   });

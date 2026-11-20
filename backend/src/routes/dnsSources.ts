@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { query, queryOne } from '../config/database';
-import { requireAuth, requireAdmin } from '../middleware/auth';
+import { requireAuth, settingsReadAdminWrite } from '../middleware/auth';
 import { seal } from '../utils/sealed';
 import { parseDnsSource } from '../utils/dnsSourceInput';
 import { pollSource, testSource, dropPiholeSession, type DnsSourceRow } from '../services/dns/DnsLogService';
@@ -12,7 +12,7 @@ import { pollSource, testSource, dropPiholeSession, type DnsSourceRow } from '..
  * sealed and never sent back, only whether there is one.
  */
 const router = Router();
-router.use(requireAuth, requireAdmin);
+router.use(requireAuth, settingsReadAdminWrite);
 
 const PUBLIC_COLUMNS = `s.id, s.name, s.kind, s.site_id, st.name AS site_name, s.url, s.username, (s.password <> '') AS has_password,
   s.tls_verify, s.enabled, s.cursor_at, s.last_polled_at, s.last_error, s.queries_counted, s.created_at`;

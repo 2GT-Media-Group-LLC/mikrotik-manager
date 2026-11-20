@@ -4,7 +4,7 @@ import { encryptionKeyInfo, encryptionKeyMissing, rotateEncryptionKey, retireOld
 import { endAllSessions, forgetSessionAccount } from '../utils/sessionState';
 import bcrypt from 'bcryptjs';
 import { query, queryOne, transaction } from '../config/database';
-import { requireAuth, requireAdmin } from '../middleware/auth';
+import { requireAuth, requireAdmin, requireSettingsRead, canReadSettings } from '../middleware/auth';
 import { netflowCollector } from '../services/netflow/NetflowCollector';
 import { validatePassword } from '../utils/passwordPolicy';
 import { OIDC_SETTINGS_KEY } from '../services/oidc/oidcConfig';
@@ -22,12 +22,27 @@ router.use(requireAuth);
 // (GHSA-qm4w-hmcg-7rq9); they have their own admin-only endpoints too.
 const PROTECTED_SETTING_KEYS = new Set<string>([OIDC_SETTINGS_KEY, AI_SETTINGS_KEY]);
 
+// What a viewer or a site-limited account's pages need from the settings,
+// and nothing else: those accounts see only their own account in Settings,
+// not how the fleet is set up (backups, polling, Change Guard, schedules...).
+// Fleet admins and operators read every setting.
+const EVERYONE_SETTING_KEYS = new Set<string>([
+  'maps_enabled', 'docs_link_enabled', 'update_check_enabled', 'time_format_default', 'firmware_update_channel',
+  FIREWALL_LOG_SERVICES_KEY, FIREWALL_LOG_COLORS_KEY,
+  'spectral_scan_enabled', 'spectral_scan_interval_hours', 'ap_scan_enabled', 'ap_scan_interval_hours',
+  // The NetFlow page: an operator in a site turns NetFlow on for its devices
+  // only once the collector's address is set, and sees where they send it.
+  'netflow_enabled', 'netflow_collector_address', 'netflow_collector_port', 'netflow_version',
+]);
+
 // GET /api/settings
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
+  const all = canReadSettings(req.user);
   const settings = await query(`SELECT key, value FROM app_settings ORDER BY key`);
   const map: Record<string, unknown> = {};
   for (const s of settings as { key: string; value: unknown }[]) {
     if (PROTECTED_SETTING_KEYS.has(s.key)) continue;
+    if (!all && !EVERYONE_SETTING_KEYS.has(s.key)) continue;
     map[s.key] = s.value;
   }
   res.json(map);
@@ -168,7 +183,7 @@ const USER_COLUMNS = `u.id, u.username, u.email, u.role, u.auth_provider, u.crea
        FROM user_group_roles ugr JOIN site_groups g ON g.id = ugr.group_id WHERE ugr.user_id = u.id),
     '[]'::json) AS group_roles`;
 
-router.get('/users', requireAdmin, async (_req, res) => {
+router.get('/users', requireSettingsRead, async (_req, res) => {
   const users = await query(`SELECT ${USER_COLUMNS} FROM users u ORDER BY u.username`);
   res.json(users);
 });
@@ -288,7 +303,7 @@ async function encryptionOverview() {
 }
 
 // GET /api/settings/encryption — which key protects stored credentials, and how much is under it.
-router.get('/encryption', requireAdmin, async (_req, res) => {
+router.get('/encryption', requireSettingsRead, async (_req, res) => {
   res.json(await encryptionOverview());
 });
 

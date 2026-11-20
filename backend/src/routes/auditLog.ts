@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { query } from '../config/database';
-import { requireAuth, requireAdmin } from '../middleware/auth';
+import { requireAuth, requireSettingsRead } from '../middleware/auth';
 
 const router = Router();
 router.use(requireAuth);
-router.use(requireAdmin);
+// Read-only, so fleet operators see it too.
+router.use(requireSettingsRead);
 
 // GET /api/audit-log?page=1&limit=50&userId=&entityType=&search=&from=&to=
 router.get('/', async (req, res) => {

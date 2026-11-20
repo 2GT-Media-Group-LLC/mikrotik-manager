@@ -33,13 +33,20 @@ export function useIsFleetAdmin(): boolean {
  * terminal is offered only to admins (#411); the server checks the same.
  */
 export function useIsAdminIn(siteId: number | null | undefined): boolean {
+  return useAdminIn()(siteId);
+}
+
+/** useIsAdminIn for a list: one check per row's site. */
+export function useAdminIn(): (siteId: number | null | undefined) => boolean {
   const user = useAuthStore((state) => state.user);
   const current = useSiteStore((state) => state.currentSiteId);
-  if (user?.siteRoles) {
-    const id = siteId ?? current;
-    // "All my sites": an admin somewhere; the server checks each device.
-    if (id == null) return Object.values(user.siteRoles).includes('admin');
-    return user.siteRoles[String(id)] === 'admin';
-  }
-  return user?.role === 'admin';
+  return (siteId) => {
+    if (user?.siteRoles) {
+      const id = siteId ?? current;
+      // "All my sites": an admin somewhere; the server checks each device.
+      if (id == null) return Object.values(user.siteRoles).includes('admin');
+      return user.siteRoles[String(id)] === 'admin';
+    }
+    return user?.role === 'admin';
+  };
 }

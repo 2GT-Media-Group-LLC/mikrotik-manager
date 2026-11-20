@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { query, queryOne } from '../config/database';
-import { requireAuth, requireAdmin, fleetOnly } from '../middleware/auth';
+import { requireAuth, settingsReadAdminWrite, fleetOnly } from '../middleware/auth';
 import { loadAiSettings, maskedAiSettings, oauthSecret, saveAiSettings, isCanonicalHttps, type AiSettings } from '../services/mcp/settings';
 import { testOauthProvider } from '../services/mcp/auth';
 import { newReviewToken, REVIEW_SCOPE } from '../services/mcp/tokens';
@@ -10,7 +10,7 @@ import { newReviewToken, REVIEW_SCOPE } from '../services/mcp/tokens';
  * read access to the whole fleet's review data to outside tools.
  */
 const router = Router();
-router.use(requireAuth, requireAdmin, fleetOnly);
+router.use(requireAuth, settingsReadAdminWrite, fleetOnly);
 
 router.get('/config', async (_req, res) => {
   res.json(maskedAiSettings(await loadAiSettings()));

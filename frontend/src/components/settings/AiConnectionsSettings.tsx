@@ -63,15 +63,20 @@ function Service({ title, blurb, on, onChange, children }: {
  * Settings → AI Connections: lets AI tools read the fleet's stored review data
  * over MCP and/or OpenAPI. Read-only; admins with fleet-wide access only.
  */
-export default function AiConnectionsSettings({ isAdmin }: { isAdmin: boolean }) {
+/** Fleet operators see the setup read-only; only an admin changes it. */
+export default function AiConnectionsSettings({ isAdmin, canRead }: { isAdmin: boolean; canRead: boolean }) {
   const { data } = useQuery({
     queryKey: ['ai-connections'],
     queryFn: () => aiConnectionsApi.getConfig().then((r) => r.data),
-    enabled: isAdmin,
+    enabled: canRead,
   });
-  if (!isAdmin) return <div className="card p-6 text-sm text-gray-400 dark:text-slate-500">AI connections can only be set up by administrators.</div>;
+  if (!canRead) return <div className="card p-6 text-sm text-gray-400 dark:text-slate-500">AI connections can only be set up by administrators.</div>;
   if (!data) return <div className="card p-6 text-sm text-gray-400 dark:text-slate-500">Loading…</div>;
-  return <AiForm initial={data} />;
+  return (
+    <fieldset disabled={!isAdmin} className="min-w-0">
+      <AiForm initial={data} />
+    </fieldset>
+  );
 }
 
 const FIELDS = ['enabled', 'mcp_enabled', 'mcp_auth', 'openapi_enabled', 'public_url', 'oauth_issuer', 'oauth_client_id'] as const;

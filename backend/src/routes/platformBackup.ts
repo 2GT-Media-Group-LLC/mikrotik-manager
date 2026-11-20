@@ -8,7 +8,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { query, queryOne } from '../config/database';
 import { redis } from '../config/redis';
-import { requireAuth, requireAdmin } from '../middleware/auth';
+import { requireAuth, settingsReadAdminWrite } from '../middleware/auth';
 import { encrypt } from '../utils/crypto';
 import { logSafe } from '../utils/logSafe';
 import {
@@ -53,7 +53,7 @@ router.get('/download/:token', async (req, res) => {
   fs.createReadStream(file).pipe(res);
 });
 
-router.use(requireAuth, requireAdmin);
+router.use(requireAuth, settingsReadAdminWrite);
 
 // ─── Overview ───────────────────────────────────────────────────────────────
 

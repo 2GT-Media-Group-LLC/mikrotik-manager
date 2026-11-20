@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { query, queryOne } from '../config/database';
-import { requireWrite } from '../middleware/auth';
+import { requireSiteAdmin } from '../middleware/auth';
 import { activeSite } from '../middleware/site';
 import { siteScopeDevices } from '../utils/siteScope';
 import { strictId } from '../utils/siteAccess';
@@ -123,9 +123,9 @@ async function settlePending(d: PkgRow): Promise<'install' | 'remove' | null> {
 router.get('/', async (req, res) => {
   const scope = siteScopeDevices(activeSite(req), 'd');
   const rows = await query<PkgRow & {
-    name: string; device_type: string; model: string | null; ros_version: string | null; architecture: string | null;
+    name: string; device_type: string; model: string | null; ros_version: string | null; architecture: string | null; site_id: number | null;
   }>(
-    `SELECT d.id, d.name, d.status, d.device_type, d.model, d.ros_version, d.architecture, d.installed_packages, d.disabled_packages
+    `SELECT d.id, d.name, d.site_id, d.status, d.device_type, d.model, d.ros_version, d.architecture, d.installed_packages, d.disabled_packages
        FROM devices d ${scope ? `WHERE ${scope}` : ''} ORDER BY d.name`
   );
   const changing = await Promise.all(rows.map((r) => settlePending(r)));
@@ -175,7 +175,7 @@ router.get('/device', async (req, res) => {
  * POST /netinstall/package?deviceId= { action: 'install' | 'remove', confirm: true }.
  * Either reboots the device.
  */
-router.post('/package', requireWrite, async (req, res) => {
+router.post('/package', requireSiteAdmin, async (req, res) => {
   const id = deviceIdParam(req, res); if (!id) return;
   const action = req.body?.action;
   if (action !== 'install' && action !== 'remove') return res.status(400).json({ error: 'action must be install or remove' });
@@ -267,7 +267,7 @@ function entrySpace(ctx: Awaited<ReturnType<typeof formContext>>, params: Record
 }
 
 // POST /netinstall/entry?deviceId=
-router.post('/entry', requireWrite, (req, res) => withForm(req, res, async (ctx, _device, id) => {
+router.post('/entry', requireSiteAdmin, (req, res) => withForm(req, res, async (ctx, _device, id) => {
   const r = checkEntry(req.body ?? {}, { interfaces: ctx.s.interfaces, knownPackages: ctx.s.knownPackages });
   if (Object.keys(r.errors).length) return sendErrors(res, r.errors);
   const space = entrySpace(ctx, r.params);
@@ -277,7 +277,7 @@ router.post('/entry', requireWrite, (req, res) => withForm(req, res, async (ctx,
 }));
 
 // PUT /netinstall/entry/:id?deviceId=
-router.put('/entry/:id', requireWrite, (req, res) => withForm(req, res, async (ctx, _device, id) => {
+router.put('/entry/:id', requireSiteAdmin, (req, res) => withForm(req, res, async (ctx, _device, id) => {
   const existing = ctx.live.entries.find((e) => e['.id'] === req.params.id);
   if (!existing) return res.status(404).json({ error: 'That entry is no longer on the device. Refresh the page.' });
   const r = checkEntry(req.body ?? {}, { interfaces: ctx.s.interfaces, knownPackages: ctx.s.knownPackages, existing });
@@ -290,7 +290,7 @@ router.put('/entry/:id', requireWrite, (req, res) => withForm(req, res, async (c
 }));
 
 // DELETE /netinstall/entry/:id?deviceId=
-router.delete('/entry/:id', requireWrite, (req, res) => withForm(req, res, async (ctx, _device, id) => {
+router.delete('/entry/:id', requireSiteAdmin, (req, res) => withForm(req, res, async (ctx, _device, id) => {
   const existing = ctx.live.entries.find((e) => e['.id'] === req.params.id);
   if (!existing) return res.status(404).json({ error: 'That entry is no longer on the device. Refresh the page.' });
   await withGuardedChange(id, req, res, { kind: 'netinstall.remove', summary: 'Delete Netinstall server entry' },
@@ -300,7 +300,7 @@ router.delete('/entry/:id', requireWrite, (req, res) => withForm(req, res, async
 // ─── Cache and settings ──────────────────────────────────────────────────────
 
 // POST /netinstall/cache?deviceId= { arch, version?, packages? }
-router.post('/cache', requireWrite, (req, res) => withForm(req, res, async (ctx, _device, id) => {
+router.post('/cache', requireSiteAdmin, (req, res) => withForm(req, res, async (ctx, _device, id) => {
   const errors: Record<string, string> = {};
   const arch = String(req.body?.arch ?? '');
   if (!(ARCHES as readonly string[]).includes(arch)) errors.arch = 'Choose the architecture of the devices to install.';
@@ -322,7 +322,7 @@ router.post('/cache', requireWrite, (req, res) => withForm(req, res, async (ctx,
 // DELETE /netinstall/cache?deviceId=&path=
 // By path: cache rows are numbered by position (*0, *1...), so an id read
 // earlier can name another file once one is removed.
-router.delete('/cache', requireWrite, (req, res) => withForm(req, res, async (ctx, _device, id) => {
+router.delete('/cache', requireSiteAdmin, (req, res) => withForm(req, res, async (ctx, _device, id) => {
   const path = String(req.query.path ?? '');
   const row = path ? ctx.live.cache.find((r) => r.path === path) : undefined;
   if (!row) return res.status(404).json({ error: 'That file is no longer in the cache. Refresh the page.' });
@@ -331,7 +331,7 @@ router.delete('/cache', requireWrite, (req, res) => withForm(req, res, async (ct
 }));
 
 // PUT /netinstall/settings?deviceId= { cache_directory }
-router.put('/settings', requireWrite, (req, res) => withForm(req, res, async (ctx, _device, id) => {
+router.put('/settings', requireSiteAdmin, (req, res) => withForm(req, res, async (ctx, _device, id) => {
   const dir = String(req.body?.cache_directory ?? '').trim().replace(/^\/+/, '');
   const e = cacheDirectoryError(dir, ctx.live.disks);
   if (e) return sendErrors(res, { cache_directory: e });
@@ -347,7 +347,7 @@ router.put('/settings', requireWrite, (req, res) => withForm(req, res, async (ct
  * found by MAC, read again now, never by a row id from an earlier read: the
  * list's ids can name another device by the time the button is pressed.
  */
-router.post('/devices/install', requireWrite, (req, res) => withForm(req, res, async (ctx, _device, id) => {
+router.post('/devices/install', requireSiteAdmin, (req, res) => withForm(req, res, async (ctx, _device, id) => {
   const want = normalizeMac(req.body?.mac);
   const target = want ? ctx.live.devices.find((d) => normalizeMac(d['mac-address']) === want) : undefined;
   const r = checkInstall(req.body ?? {}, target, ctx.s.knownPackages);
@@ -366,7 +366,7 @@ router.post('/devices/install', requireWrite, (req, res) => withForm(req, res, a
 }));
 
 // POST /netinstall/devices/clear?deviceId=
-router.post('/devices/clear', requireWrite, (req, res) => withForm(req, res, async (_ctx, _device, id) => {
+router.post('/devices/clear', requireSiteAdmin, (req, res) => withForm(req, res, async (_ctx, _device, id) => {
   await withGuardedChange(id, req, res, { kind: 'netinstall.clear', summary: 'Clear the Netinstall device list' },
     async (c) => { await c.clearNetinstallDevices(); return { success: true }; });
 }));

@@ -1,4 +1,3 @@
-import { useCanWrite } from '../../hooks/useCanWrite';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -21,7 +20,7 @@ const EVENT_LABEL: Record<string, string> = {
 
 // ─── API tokens ────────────────────────────────────────────────────────────────
 
-function TokensSection({ isAdmin }: { isAdmin: boolean }) {
+function TokensSection({ isAdmin, canRead }: { isAdmin: boolean; canRead: boolean }) {
   const qc = useQueryClient();
   const [name, setName] = useState('');
   const [scope, setScope] = useState<'read' | 'write'>('read');
@@ -32,7 +31,7 @@ function TokensSection({ isAdmin }: { isAdmin: boolean }) {
   const { data: tokens = [] } = useQuery({
     queryKey: ['api-tokens'],
     queryFn: () => automationApi.listTokens().then(r => r.data),
-    enabled: isAdmin,
+    enabled: canRead,
   });
   const create = useMutation({
     meta: { inlineError: true },
@@ -41,12 +40,12 @@ function TokensSection({ isAdmin }: { isAdmin: boolean }) {
   });
   const del = useMutation({ mutationFn: (id: number) => automationApi.deleteToken(id), onSuccess: () => qc.invalidateQueries({ queryKey: ['api-tokens'] }) });
 
-  if (!isAdmin) {
+  if (!canRead) {
     return <div className="card p-6 text-sm text-gray-400 dark:text-slate-500">API tokens can only be managed by administrators.</div>;
   }
 
   return (
-    <div className="card overflow-hidden">
+    <fieldset disabled={!isAdmin} className="card overflow-hidden min-w-0">
       <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
         <KeyRound className="w-4 h-4 text-blue-500" />
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">API Tokens</h3>
@@ -104,7 +103,7 @@ function TokensSection({ isAdmin }: { isAdmin: boolean }) {
         )}
         <p className="text-xs text-gray-400 dark:text-slate-500">Write tokens map to Operator privileges; no token can perform admin actions or manage other tokens.</p>
       </div>
-    </div>
+    </fieldset>
   );
 }
 
@@ -262,14 +261,13 @@ function ReportsSection() {
   );
 }
 
-export default function AutomationSettings({ isAdmin }: { isAdmin: boolean }) {
-  // Webhooks and reports need write access on the server; viewers see them
-  // read-only instead of getting a 403 (outside review U10).
-  const canWrite = useCanWrite();
+export default function AutomationSettings({ isAdmin, canRead }: { isAdmin: boolean; canRead: boolean }) {
+  // Only a fleet admin changes settings; fleet operators see them read-only
+  // instead of getting a 403 (outside review U10).
   return (
     <div className="space-y-4">
-      <TokensSection isAdmin={isAdmin} />
-      <fieldset disabled={!canWrite} className="space-y-4 min-w-0">
+      <TokensSection isAdmin={isAdmin} canRead={canRead} />
+      <fieldset disabled={!isAdmin} className="space-y-4 min-w-0">
         <WebhooksSection />
         <ReportsSection />
       </fieldset>

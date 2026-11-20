@@ -63,6 +63,8 @@ export default function PollerHealthCard() {
   const queryClient = useQueryClient();
   const [drainResult, setDrainResult] = useState('');
   const [confirmDrain, setConfirmDrain] = useState(false);
+  // Clearing the queue is an admin's call; operators see the card read-only.
+  const canDrain = useIsFleetAdmin();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['poller-health'],
@@ -232,7 +234,7 @@ export default function PollerHealthCard() {
               <button onClick={() => setConfirmDrain(false)} className="btn-secondary text-xs">Cancel</button>
             </div>
           ) : (
-            <button onClick={() => setConfirmDrain(true)} disabled={backlog === 0}
+            <button onClick={() => setConfirmDrain(true)} disabled={backlog === 0 || !canDrain}
                     className="btn-secondary text-xs flex items-center gap-1.5 disabled:opacity-50">
               <Trash2 className="w-3.5 h-3.5" /> Clear {backlog > 0 ? backlog.toLocaleString() : ''} queued
             </button>
