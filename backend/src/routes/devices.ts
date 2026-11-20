@@ -61,7 +61,7 @@ import { classifyKeyTarget } from '../utils/sshKeyCredentials';
 import type { HealthIssue } from '../utils/deviceHealth';
 import { runHealthCheck } from '../services/healthCheck';
 import { buildSegments, summarise, summariseBands } from '../utils/lteDwell';
-import { siteScopeDevices, andSite } from '../utils/siteScope';
+import { siteScopeDevices, siteScopeByDevice, siteList, andSite } from '../utils/siteScope';
 import { activeSite, targetSite } from '../middleware/site';
 import { resolveSiteChoice } from '../services/deviceSite';
 import { romonSettingFor, romonChecks, romonSetParams } from '../services/romon';
@@ -275,8 +275,13 @@ router.delete('/security/suppressions/:id', requireWrite, async (req, res) => {
   res.status(204).end();
 });
 
-// GET /api/devices/discovered — unresolved MikroTik neighbors from topology_links
-router.get('/discovered', async (_req, res) => {
+// GET /api/devices/discovered — unresolved MikroTik neighbors from topology_links.
+// Only what the devices in view heard: a site-scoped account isn't told about
+// other sites' devices, their neighbours or their clients (P1-7).
+router.get('/discovered', async (req, res) => {
+  const scope = activeSite(req);
+  const heardIn = siteScopeDevices(scope, 'd');
+  const clientIn = siteScopeByDevice(scope, 'c.device_id');
   const rows = await query<{
     neighbor_identity: string | null;
     neighbor_address: string | null;
@@ -293,9 +298,11 @@ router.get('/discovered', async (_req, res) => {
     JOIN devices d ON d.id = tl.from_device_id
     LEFT JOIN clients c ON LOWER(c.mac_address) = LOWER(tl.neighbor_mac)
                         AND c.ip_address IS NOT NULL AND c.ip_address != ''
+                        ${clientIn ? `AND ${clientIn}` : ''}
     WHERE tl.to_device_id IS NULL
       AND tl.neighbor_platform ILIKE '%mikrotik%'
       AND (tl.neighbor_address IS NULL OR tl.neighbor_address = '' OR tl.neighbor_address NOT LIKE '%:%')
+      ${heardIn ? `AND ${heardIn}` : ''}
     ORDER BY tl.discovered_at DESC
   `);
 
@@ -305,25 +312,30 @@ router.get('/discovered', async (_req, res) => {
   //   - its IP matching the managed device's primary ip_address,
   //   - its identity matching the managed device's name.
   const [managedByMac, managedByIp, managedByName] = await Promise.all([
-    query<{ device_id: number; device_name: string; mac: string }>(
-      `SELECT i.device_id AS device_id, d.name AS device_name, LOWER(i.mac_address) AS mac
+    query<{ device_id: number; device_name: string; site_id: number | null; mac: string }>(
+      `SELECT i.device_id AS device_id, d.name AS device_name, d.site_id, LOWER(i.mac_address) AS mac
          FROM interfaces i
          JOIN devices d ON d.id = i.device_id
         WHERE i.mac_address IS NOT NULL AND i.mac_address <> ''`
     ),
-    query<{ id: number; name: string; ip_address: string }>(
-      `SELECT id, name, ip_address FROM devices WHERE ip_address IS NOT NULL AND ip_address <> ''`
+    query<{ id: number; name: string; site_id: number | null; ip_address: string }>(
+      `SELECT id, name, site_id, ip_address FROM devices WHERE ip_address IS NOT NULL AND ip_address <> ''`
     ),
-    query<{ id: number; name: string }>(
-      `SELECT id, name FROM devices WHERE name IS NOT NULL AND name <> ''`
+    query<{ id: number; name: string; site_id: number | null }>(
+      `SELECT id, name, site_id FROM devices WHERE name IS NOT NULL AND name <> ''`
     ),
   ]);
-  const macToDevice = new Map<string, { id: number; name: string }>();
-  for (const r of managedByMac) macToDevice.set(r.mac, { id: r.device_id, name: r.device_name });
-  const ipToDevice = new Map<string, { id: number; name: string }>();
-  for (const r of managedByIp) ipToDevice.set(r.ip_address, { id: r.id, name: r.name });
-  const nameToDevice = new Map<string, { id: number; name: string }>();
-  for (const r of managedByName) nameToDevice.set(r.name.toLowerCase(), { id: r.id, name: r.name });
+  type Managed = { id: number; name: string; site_id: number | null };
+  const macToDevice = new Map<string, Managed>();
+  for (const r of managedByMac) macToDevice.set(r.mac, { id: r.device_id, name: r.device_name, site_id: r.site_id });
+  const ipToDevice = new Map<string, Managed>();
+  for (const r of managedByIp) ipToDevice.set(r.ip_address, { id: r.id, name: r.name, site_id: r.site_id });
+  const nameToDevice = new Map<string, Managed>();
+  for (const r of managedByName) nameToDevice.set(r.name.toLowerCase(), { id: r.id, name: r.name, site_id: r.site_id });
+  // A neighbour already managed in a site this account can't see is left out,
+  // rather than named: it can't be added here, and its name isn't ours to tell.
+  const mySites = isSiteScoped(req.user) ? siteList(scope) ?? [] : null;
+  const outOfReach = (m: Managed | null) => !!m && !!mySites && (m.site_id === null || !mySites.includes(m.site_id));
 
   // Deduplicate across all three identifiers so that a neighbor seen by multiple managed
   // devices — some via LLDP (has MAC), others via MNDP (no MAC) — merges into one entry.
@@ -363,14 +375,15 @@ router.get('/discovered', async (_req, res) => {
     }
   }
 
-  const results = Array.from(seen.values()).map((r) => {
+  const results = Array.from(seen.values()).flatMap((r) => {
     const mac = (r.neighbor_mac || '').toLowerCase();
     const match =
       (mac && macToDevice.get(mac)) ||
       (r.neighbor_address && ipToDevice.get(r.neighbor_address)) ||
       (r.neighbor_identity && nameToDevice.get(r.neighbor_identity.toLowerCase())) ||
       null;
-    return {
+    if (outOfReach(match)) return [];
+    return [{
       identity: r.neighbor_identity || '',
       address: r.neighbor_address || '',
       mac_address: r.neighbor_mac || '',
@@ -379,7 +392,7 @@ router.get('/discovered', async (_req, res) => {
       seen_by: r.seen_by_list.join(', '),
       duplicate_of_device_id: match ? match.id : null,
       duplicate_of_device_name: match ? match.name : null,
-    };
+    }];
   });
 
   res.json(results);
