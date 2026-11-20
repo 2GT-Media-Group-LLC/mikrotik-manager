@@ -32,13 +32,16 @@ describe('MikroTik Manager version order', () => {
 });
 
 describe('releaseBranch', () => {
-  it('sends 1.x betas to dev and everything else to main', () => {
+  it('sends 1.x betas and RCs to dev, and stable (and 1.0.0\'s RCs) to main', () => {
     expect(releaseBranch('0.77.1-beta')).toBe('main');
     expect(releaseBranch('1.0.0-rc.1')).toBe('main');
     expect(releaseBranch('1.0.0')).toBe('main');
     expect(releaseBranch('1.0.3')).toBe('main');
     expect(releaseBranch('1.1.0-beta.2')).toBe('dev');
     expect(releaseBranch('v1.1.0 Beta 2')).toBe('dev');
-    expect(releaseBranch('1.1.0-rc.1')).toBe('main');
+    expect(releaseBranch('1.1.0-rc.1')).toBe('dev');
+    expect(releaseBranch('v1.1.0 RC 2')).toBe('dev');
+    expect(releaseBranch('1.1.0')).toBe('main');
+    expect(releaseBranch('1.2.0-alpha.1')).toBe('dev');
   });
 });

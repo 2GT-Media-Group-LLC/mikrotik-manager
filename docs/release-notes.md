@@ -1,7 +1,8 @@
-# MikroTik Manager 1.1 (beta)
+# MikroTik Manager 1.1 (release candidate)
 
-1.1 is in beta on the `dev` branch and the `:beta` images
-([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
+1.1 is in release candidates on the `dev` branch and the `:beta` images
+([release channels](configuration.md#release-channels)): its features are complete, and only
+fixes go in from here. For stable, stay on 1.0 below.
 
 ## What's new in 1.1
 
@@ -266,6 +267,21 @@ beta, sent a fix or reported a problem:
   carrier's replies, and readable chart labels.
 - [@schmitt330](https://github.com/schmitt330): device tools on RouterOS 6.
 - [@orshih6](https://github.com/orshih6): a security report on the release workflow.
+
+## 1.1.0-rc.1
+
+The first release candidate for 1.1. Nothing new goes in from here, only fixes: please run it as
+you would a stable release and [open an issue](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues)
+for anything that's wrong. What 1.1 adds is [above](#whats-new-in-11). Since beta.75:
+
+- **An RC install is told about the next RC.** The update notice compared release candidates with
+  stable, as it did for 1.0's, so a 1.1 RC wouldn't have heard about rc.2. RCs now compare with
+  `dev`, and their images get a version tag (`:1.1.0-rc.1`) as betas do
+  ([Release channels](configuration.md#release-channels)).
+- **The docs, checked against 1.1**: the device tabs as they are now (802.1X, Bandwidth, Firmware,
+  Antenna Aligner, and Torch in Tools), Settings paths that had drifted, who can change alerting,
+  DNS query logs and platform backups, and the adoption sweep, which has no button: it's
+  `POST /api/adoption/cleanup`.
 
 ## 1.1.0-beta.75
 

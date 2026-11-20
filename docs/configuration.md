@@ -534,7 +534,7 @@ From 1.0 there are two lines, and you choose which one you follow:
 | Channel | Git branch | Image tag | What it gets |
 |---|---|---|---|
 | **Stable** (default) | `main` | `:latest` | 1.0.x: fixes only, including security fixes |
-| **Beta** | `dev` | `:beta` | The next minor version as betas (1.1.0-beta.1, ...), with new features as they land |
+| **Beta** | `dev` | `:beta` | The next minor version as betas (1.1.0-beta.1, ...), with new features as they land, then its release candidates (1.1.0-rc.1, ...) |
 
 Stable is what you get unless you change something, and what production fleets should run.
 New features are built on `dev` and reach stable in the next minor release; fixes go to both.
@@ -550,8 +550,8 @@ once stable has caught up with the version you were on, because the database is 
 forwards, not back; until then, stay on beta or restore a platform backup taken on stable.
 
 The update notice in the app follows your channel: a stable install is told about stable
-releases, a beta install about the next beta. A specific version can be pinned with its image
-tag (`MTM_TAG=1.0.0`).
+releases, a beta or release candidate install about the next one on `dev`. A specific version
+can be pinned with its image tag (`MTM_TAG=1.0.0`, or `MTM_TAG=1.1.0-rc.1`).
 
 From 0.24.51 each image carries an SBOM and build provenance, and is signed with
 [cosign](https://docs.sigstore.dev/) by the workflow that built it. To check an image before

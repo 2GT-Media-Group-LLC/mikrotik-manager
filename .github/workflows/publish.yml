@@ -75,12 +75,12 @@ jobs:
           fi
           echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
           echo "beta=$BETA" >> "$GITHUB_OUTPUT"
-          # The version tag belongs to main, or to dev once it carries a beta
-          # version; right after a release dev has main's version, and its
-          # build would take the tag over.
+          # The version tag belongs to main, or to dev once it carries a
+          # prerelease version (a beta or an RC); right after a release dev has
+          # main's version, and its build would take the tag over.
           VERSION_TAG=false
           case "$BRANCH" in main) VERSION_TAG=true ;; esac
-          case "$VERSION" in *beta*) VERSION_TAG=true ;; esac
+          case "$VERSION" in *-*) VERSION_TAG=true ;; esac
           echo "version_tag=$VERSION_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
@@ -186,12 +186,12 @@ jobs:
           fi
           echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
           echo "beta=$BETA" >> "$GITHUB_OUTPUT"
-          # The version tag belongs to main, or to dev once it carries a beta
-          # version; right after a release dev has main's version, and its
-          # build would take the tag over.
+          # The version tag belongs to main, or to dev once it carries a
+          # prerelease version (a beta or an RC); right after a release dev has
+          # main's version, and its build would take the tag over.
           VERSION_TAG=false
           case "$BRANCH" in main) VERSION_TAG=true ;; esac
-          case "$VERSION" in *beta*) VERSION_TAG=true ;; esac
+          case "$VERSION" in *-*) VERSION_TAG=true ;; esac
           echo "version_tag=$VERSION_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR

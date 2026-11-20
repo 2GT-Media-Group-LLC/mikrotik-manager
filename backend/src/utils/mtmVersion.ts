@@ -49,11 +49,13 @@ export function compareMtmVersions(a: string, b: string): number {
 
 /**
  * Which branch an install should compare its version against. From 1.0, main
- * is the stable line and new features come as betas from the dev branch: a
- * stable or RC install hears about stable releases, a 1.x beta about the next
- * beta. The 0.x betas all came from main.
+ * is the stable line and new features come as betas, then release candidates,
+ * from the dev branch: a stable install hears about stable releases, a 1.x
+ * beta or RC about the next one. The 0.x betas and 1.0.0's RCs came from main.
  */
 export function releaseBranch(version: string): 'main' | 'dev' {
   const v = parseMtmVersion(version);
-  return v && v.nums[0] >= 1 && v.rank <= PRE_RANK.beta ? 'dev' : 'main';
+  if (!v || v.nums[0] < 1 || v.rank > PRE_RANK.rc) return 'main';
+  const isFirstStable = v.nums[0] === 1 && v.nums[1] === 0 && v.nums[2] === 0;
+  return v.rank === PRE_RANK.rc && isFirstStable ? 'main' : 'dev';
 }
