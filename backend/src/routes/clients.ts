@@ -368,7 +368,7 @@ router.get('/:mac', async (req, res) => {
   const user = req.user;
   const canSee = (siteId: number | null) => !!user && roleInSite(user, siteId) != null;
   const path = await clientPath(start, canSee).catch((e) => {
-    console.warn(`[Clients] path for ${mac}: ${(e as Error).message}`);
+    console.warn('[Clients] path for %s: %s', logSafe(mac), logSafe((e as Error).message));
     return [] as PathHop[];
   });
   const first = path[0];

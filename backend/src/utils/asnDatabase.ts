@@ -13,6 +13,7 @@ import path from 'path';
 import https from 'https';
 import zlib from 'zlib';
 import net from 'net';
+import { logSafe } from './logSafe';
 
 export const ASN_URL = 'https://iptoasn.com/data/ip2asn-combined.tsv.gz';
 const FILE_NAME = 'ip2asn-combined.tsv.gz';
@@ -285,7 +286,7 @@ async function refresh(allowDownload: () => Promise<boolean>): Promise<void> {
     await loadNewest();
   } catch (e) {
     lastError = `download failed: ${(e as Error).message}`;
-    console.warn(`[ASN] ${lastError}`);
+    console.warn('[ASN] %s', logSafe(lastError));
   }
 }
 

@@ -1,3 +1,5 @@
+import { logSafe } from './logSafe';
+
 /**
  * Return a short, stable message for API clients; log full detail server-side only.
  *
@@ -8,7 +10,7 @@
  */
 export function safeConnectionError(context: string, err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
-  console.warn(`[${context}]`, raw);
+  console.warn('[%s] %s', logSafe(context), logSafe(raw));
 
   const code = (err as NodeJS.ErrnoException | undefined)?.code;
   switch (code) {
