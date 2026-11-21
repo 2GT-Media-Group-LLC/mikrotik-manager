@@ -117,6 +117,33 @@ suite('site-scoped accounts stay in their sites (GHSA-j9x4-qwcj-p8v8)', () => {
 
   const hex = (n: number) => `0x${n.toString(16)}`;
 
+  it('commands: what devices printed is for operators and admins, not viewers or read tokens', async () => {
+    const run = await one(`INSERT INTO command_runs (name, command, status) VALUES ('wifi', '/interface/wifi/security/print', 'completed') RETURNING id`);
+    await db.query(
+      `INSERT INTO command_run_devices (run_id, device_id, status, output) VALUES ($1, $2, 'success', 'passphrase=hunter2-wifi-key')`,
+      [run, id.devA]);
+    const read = async () => {
+      const detail = await request(app).get(`/api/commands/runs/${run}`);
+      const csv = await request(app).get(`/api/commands/runs/${run}/export`);
+      return { status: detail.status, output: detail.body.devices?.[0]?.output, hidden: !!detail.body.output_hidden, csvHasKey: csv.text.includes('hunter2') };
+    };
+
+    for (const viewer of [
+      { userId: 4, username: 'v', role: 'viewer' },                                  // fleet viewer
+      { userId: 5, username: 't', role: 'viewer', tokenAuth: true },                 // read token
+      { userId: 6, username: 'sv', role: 'viewer', siteRoles: { [id.A]: 'viewer' } }, // viewer in A
+    ]) {
+      currentUser = viewer;
+      const r = await read();
+      expect(r).toEqual({ status: 200, output: null, hidden: true, csvHasKey: false });
+    }
+    for (const allowed of [operatorInA(), fleetAdmin(), { userId: 3, username: 'fop', role: 'operator' }]) {
+      currentUser = allowed;
+      const r = await read();
+      expect(r).toEqual({ status: 200, output: 'passphrase=hunter2-wifi-key', hidden: false, csvHasKey: true });
+    }
+  });
+
   it('commands: running is for admins (#411)', async () => {
     const run = await request(app).post('/api/commands/runs').send({ command: '/system identity print', device_ids: [id.devA], start: false });
     expect(run.status).toBe(403);

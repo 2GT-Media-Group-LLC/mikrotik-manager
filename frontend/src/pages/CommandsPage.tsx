@@ -289,6 +289,11 @@ export default function CommandsPage() {
                         <Download className="w-3.5 h-3.5" /> Export CSV
                       </button>
                     </div>
+                    {detail.output_hidden && (
+                      <p className="text-xs text-gray-500 dark:text-slate-400 mb-1">
+                        What the devices printed is shown to operators and admins, since it can include passwords and keys.
+                      </p>
+                    )}
                     {detail.devices.map(d => (
                       <div key={d.id} className="text-xs border-b border-gray-100 dark:border-slate-800 last:border-0 py-1.5">
                         <button className="flex items-center gap-2 w-full text-left"
@@ -303,7 +308,7 @@ export default function CommandsPage() {
                         </button>
                         {expanded[d.id] && (
                           <pre className="mt-1 ml-14 whitespace-pre-wrap break-words text-[11px] text-gray-600 dark:text-slate-300">
-                            {d.error ? `${d.error}\n` : ''}{d.output || (d.status === 'success' ? '(no output)' : '')}
+                            {d.error ? `${d.error}\n` : ''}{d.output || (d.status === 'success' && !detail.output_hidden ? '(no output)' : '')}
                           </pre>
                         )}
                       </div>

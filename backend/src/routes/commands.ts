@@ -13,6 +13,7 @@ import { siteScopeByDevice } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { query, queryOne } from '../config/database';
 import { commandRunner } from '../services/CommandRunner';
+import { canSeeDeviceSecrets } from '../utils/redactSecrets';
 
 const router = Router();
 router.use(requireAuth);
@@ -50,6 +51,19 @@ async function refuseForeignRun(req: Request, res: Response, runId: string | num
   if (rows.length > 0 && (await devicesDenied(req.user!, rows.map((r) => r.device_id), min)).length === 0) return false;
   res.status(404).json({ error: 'Run not found' });
   return true;
+}
+
+/**
+ * Whether this account may read what devices printed for a run. Output can
+ * hold anything a command printed, Wi-Fi keys and WireGuard keys included,
+ * and only the template secrets ({{secret:...}}) are masked in it. So it
+ * follows the rule for device secrets: operators and admins, of every device
+ * in the run; not viewers or read tokens.
+ */
+async function canSeeRunOutput(req: Request, runId: string | number): Promise<boolean> {
+  if (!isSiteScoped(req.user)) return canSeeDeviceSecrets(req.user);
+  const rows = await query<{ device_id: number }>(`SELECT device_id FROM command_run_devices WHERE run_id = $1`, [runId]);
+  return (await devicesDenied(req.user!, rows.map((r) => r.device_id), 'operator')).length === 0;
 }
 
 router.post('/preview', async (req: Request, res: Response) => {
@@ -186,13 +200,17 @@ router.get('/runs/:id', async (req: Request, res: Response) => {
   if (await refuseForeignRun(req, res, req.params.id, 'viewer')) return;
   const run = await queryOne(`SELECT * FROM command_runs WHERE id = $1`, [req.params.id]);
   if (!run) return res.status(404).json({ error: 'Run not found' });
-  const devices = await query(
+  const devices = await query<{ output: string | null }>(
     `SELECT rd.*, d.name AS device_name, d.ip_address
        FROM command_run_devices rd
        JOIN devices d ON d.id = rd.device_id
       WHERE rd.run_id = $1 ORDER BY rd.wave, d.name`,
     [req.params.id]
   );
+  // Viewers see each device's status and errors, not what it printed.
+  if (!(await canSeeRunOutput(req, req.params.id))) {
+    return res.json({ ...run, output_hidden: true, devices: devices.map((d) => ({ ...d, output: null })) });
+  }
   res.json({ ...run, devices });
 });
 
@@ -221,6 +239,8 @@ router.get('/runs/:id/export', async (req: Request, res: Response) => {
       WHERE rd.run_id = $1 ORDER BY rd.wave, d.name`,
     [req.params.id]
   );
+  // The same rule as the run's page: no device output for viewers.
+  const showOutput = await canSeeRunOutput(req, req.params.id);
 
   // Timestamps arrive from the driver as Date objects, whose default string form
   // ("Thu Sep 03 2026 15:45:29 GMT+0000 (Coordinated Universal Time)") no
@@ -239,7 +259,7 @@ router.get('/runs/:id/export', async (req: Request, res: Response) => {
      'status', 'guarded', 'started_at', 'finished_at', 'output', 'error'].join(','),
     ...rows.map((r) => [
       run.id, run.name, run.command, run.status, r.device_name.trim(), r.ip_address, r.wave,
-      r.status, r.guarded, r.started_at ?? '', r.finished_at ?? '', r.output ?? '', r.error ?? '',
+      r.status, r.guarded, r.started_at ?? '', r.finished_at ?? '', showOutput ? r.output ?? '' : '(hidden)', r.error ?? '',
     ].map(esc).join(',')),
   ];
 
