@@ -174,6 +174,14 @@ The **Devices** table lists the devices a mirror serves. Select some and choose 
 mirror**: the manager adds the package server to each device's local update sources. **Stop
 using it** removes it again. Devices older than 7.17 can't be selected.
 
+A device whose mirror holds a newer version than it runs counts as having an update
+everywhere in the manager: the Dashboard, the device list, alerts and reports, not only
+the Firmware page. That matters for devices with no internet, whose own check with
+MikroTik finds nothing. The manager looks within about ten minutes of a sync or of a device
+joining the mirror, without contacting any device, so it works in Dark Site Mode too.
+**Install & Reboot** on a device's page installs from MikroTik's servers. For a device that
+can only get the update from the mirror, it says so; upgrade it with a rollout instead.
+
 ### Rollouts from the mirror
 
 When any selected device uses a mirror, the rollout bar offers **Packages from: Local mirror**

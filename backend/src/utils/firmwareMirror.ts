@@ -6,7 +6,7 @@
  * with the packages the fleet runs; other devices pull them through
  * /system/package/local-update, which RouterOS has from 7.17.
  */
-import { compareRosVersions, parseRosVersion } from './rosVersion';
+import { compareRosVersions, isNewerRosVersion, parseRosVersion } from './rosVersion';
 
 /** local-update, the client side of the mirror, first shipped in 7.17. */
 export const LOCAL_UPDATE_MIN_VERSION = '7.17';
@@ -193,6 +193,24 @@ export function newestCompleteFrom(
   return complete[0] ?? null;
 }
 
+
+/**
+ * Fold what a device's mirror holds into its "update available" flag (#482).
+ * A device that gets its packages from a mirror often has no internet, so its
+ * own check against MikroTik finds nothing; the mirror holding a newer version
+ * is an update all the same. The newer of the two versions is the one shown.
+ * Only ever adds an update: with nothing newer on the mirror, the device's own
+ * answer stands.
+ */
+export function withMirrorUpdate(
+  installed: string | null | undefined,
+  own: { available: boolean; latest: string | null },
+  mirrorVersion: string | null | undefined,
+): { available: boolean; latest: string | null } {
+  if (!mirrorVersion || !isNewerRosVersion(mirrorVersion, installed)) return own;
+  const latest = own.latest && isNewerRosVersion(own.latest, mirrorVersion) ? own.latest : mirrorVersion;
+  return { available: true, latest };
+}
 
 // ─── Where the packages go (Discussion #85) ─────────────────────────────────
 //
