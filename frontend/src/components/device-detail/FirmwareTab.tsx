@@ -77,6 +77,8 @@ export default function FirmwareTab({ deviceId, device }: Props) {
       setInstallSuccess(res.data.message);
       if (res.data.started) {
         setUpdateInfo(null);
+      } else if (res.data.mirror_version) {
+        // The update is real, it's only on the package mirror (#482): keep it shown.
       } else {
         setUpdateInfo({
           'installed-version': res.data.installed_version || '',

@@ -54,6 +54,8 @@ import { enqueueBulkAddJob, getBulkAddJobState } from '../services/DeviceBulkAdd
 import { logSafe } from '../utils/logSafe';
 import { withGuardedChange } from '../services/changeGuard/guardedRoute';
 import { updateAvailable } from '../utils/rosVersion';
+import { withMirrorUpdate } from '../utils/firmwareMirror';
+import { mirrorVersions } from '../services/firmwareMirror';
 import { DEVICE_BASE_COLUMNS } from '../services/deviceColumns';
 import { withEffectiveLocation } from '../services/deviceLocation';
 import { SSH_TARGET_COLS } from '../services/SshKeyService';
@@ -3098,21 +3100,26 @@ router.post('/:id/check-update', requireWrite, async (req, res) => {
     const updateInfo = await collector.checkForUpdates();
 
     // Persist results so the UI reflects the latest check immediately
-    const latestVersion = (updateInfo['latest-version'] ?? '').trim();
+    const ownLatest = (updateInfo['latest-version'] ?? '').trim();
     const installedVersion = (updateInfo['installed-version'] ?? '').trim();
     const statusText = (updateInfo['status'] ?? '').toLowerCase();
     // Compared as versions, not as strings: "different" is not "newer", and
-    // reading it that way offered an older release as an update (#144).
-    const hasUpdate = updateAvailable({
-      installed: installedVersion, latest: latestVersion, status: statusText,
-    });
+    // reading it that way offered an older release as an update (#144). What
+    // the device's package mirror holds counts too (#482).
+    const mirrorVersion = (await mirrorVersions([deviceRow.id]).catch(() => new Map<number, string>())).get(deviceRow.id);
+    const merged = withMirrorUpdate(installedVersion, {
+      available: updateAvailable({ installed: installedVersion, latest: ownLatest, status: statusText }),
+      latest: ownLatest || null,
+    }, mirrorVersion);
 
     await query(
       `UPDATE devices SET firmware_update_available = $1, latest_ros_version = $2, updated_at = NOW() WHERE id = $3`,
-      [hasUpdate, latestVersion || null, deviceRow.id]
+      [merged.available, merged.latest, deviceRow.id]
     );
 
-    return res.json(updateInfo);
+    return res.json(merged.latest && merged.latest !== ownLatest
+      ? { ...updateInfo, 'latest-version': merged.latest, 'status': `New version is available on the package mirror` }
+      : updateInfo);
   } finally {
     collector.disconnect();
   }
@@ -3278,6 +3285,19 @@ router.post('/:id/install-update', requireWrite, async (req, res) => {
     // Only a genuinely newer version: a channel offering an older release would
     // otherwise install it, a downgrade (P2-9).
     const decision = upgradeDecision(installed, latest);
+    // Nothing from MikroTik, but the device's package mirror has a newer
+    // version (#482): this button installs from MikroTik's servers, so say
+    // where the mirror's upgrade is, and don't call the device up to date.
+    if (decision.action === 'skip') {
+      const mirrorVersion = (await mirrorVersions([deviceRow.id]).catch(() => new Map<number, string>())).get(deviceRow.id);
+      if (mirrorVersion && withMirrorUpdate(installed, { available: false, latest: null }, mirrorVersion).available) {
+        return res.json({
+          started: false, installed_version: installed || null, mirror_version: mirrorVersion,
+          message: `RouterOS ${mirrorVersion} is on this device's package mirror, not offered by MikroTik's servers. ` +
+            'Upgrade it from Firmware with a rollout, choosing Packages from: Local mirror.',
+        });
+      }
+    }
     if (decision.action === 'skip' && decision.reason !== 'Already up to date') {
       return res.json({ started: false, installed_version: installed || null, message: decision.reason });
     }

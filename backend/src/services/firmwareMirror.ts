@@ -29,7 +29,7 @@ import { sshHostCheck, explainSshError } from './sshHostCheck';
 import { logSafe } from '../utils/logSafe';
 import {
   planFiles, versionsToPrune, parseNewest, parseSha256File, supportsLocalUpdate,
-  isMirrorVersion, newestCompleteFrom, MIRROR_GROUP, MIRROR_GROUP_POLICY, mirrorPath, mirrorDisks,
+  isMirrorVersion, newestCompleteFrom, withMirrorUpdate, MIRROR_GROUP, MIRROR_GROUP_POLICY, mirrorPath, mirrorDisks,
   type FleetDevice, type NeededFile, type MirrorDisk,
 } from '../utils/firmwareMirror';
 import { sshRoute } from './jumpHosts';
@@ -583,6 +583,59 @@ export async function newestCompleteVersion(mirrorId: number, arch: string | nul
   const rows = await query<{ version: string; filename: string }>(
     `SELECT version, filename FROM firmware_mirror_files WHERE mirror_id = $1`, [mirrorId]);
   return newestCompleteFrom(rows, arch, packages);
+}
+
+/**
+ * The newest version each device's mirror holds a complete set of packages
+ * for, keyed by device id. Only devices set up for a mirror without error, and
+ * only those it has something for. Reads the database alone, no device.
+ */
+export async function mirrorVersions(deviceIds?: number[]): Promise<Map<number, string>> {
+  const clients = await query<{ device_id: number; mirror_id: number; architecture: string | null; installed_packages: string[] | null }>(
+    `SELECT c.device_id, c.mirror_id, d.architecture, d.installed_packages
+       FROM firmware_mirror_clients c
+       JOIN firmware_mirrors m ON m.id = c.mirror_id
+       JOIN devices d ON d.id = c.device_id
+      WHERE c.status = 'ok' ${deviceIds ? 'AND c.device_id = ANY($1::int[])' : ''}`,
+    deviceIds ? [deviceIds] : []);
+  const files = new Map<number, { version: string; filename: string }[]>();
+  const out = new Map<number, string>();
+  for (const c of clients) {
+    if (!files.has(c.mirror_id)) {
+      files.set(c.mirror_id, await query<{ version: string; filename: string }>(
+        `SELECT version, filename FROM firmware_mirror_files WHERE mirror_id = $1`, [c.mirror_id]));
+    }
+    const v = newestCompleteFrom(files.get(c.mirror_id)!, c.architecture, c.installed_packages);
+    if (v) out.set(c.device_id, v);
+  }
+  return out;
+}
+
+export interface MirrorFlagged { id: number; name: string; installed: string | null; latest: string; newly: boolean }
+
+/**
+ * Flag the devices whose mirror holds a newer version than they run (#482),
+ * so the Dashboard, the device list, reports and alerts see the update the
+ * Firmware page already showed. It only raises the flag: the poll that reads
+ * the new version, a finished rollout and the daily check clear it.
+ */
+export async function flagMirrorUpdates(): Promise<MirrorFlagged[]> {
+  const versions = await mirrorVersions();
+  if (!versions.size) return [];
+  const devices = await query<{ id: number; name: string; ros_version: string | null; latest_ros_version: string | null; firmware_update_available: boolean | null }>(
+    `SELECT id, name, ros_version, latest_ros_version, firmware_update_available FROM devices WHERE id = ANY($1::int[])`,
+    [[...versions.keys()]]);
+  const out: MirrorFlagged[] = [];
+  for (const d of devices) {
+    const was = { available: !!d.firmware_update_available, latest: d.latest_ros_version };
+    const next = withMirrorUpdate(d.ros_version, was, versions.get(d.id));
+    if (next.available === was.available && next.latest === was.latest) continue;
+    await query(
+      `UPDATE devices SET firmware_update_available = $2, latest_ros_version = $3, updated_at = NOW() WHERE id = $1`,
+      [d.id, next.available, next.latest]);
+    out.push({ id: d.id, name: d.name, installed: d.ros_version, latest: next.latest!, newly: !was.available });
+  }
+  return out;
 }
 
 // ─── Automatic sync ──────────────────────────────────────────────────────────

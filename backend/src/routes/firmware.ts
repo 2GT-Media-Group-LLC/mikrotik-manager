@@ -11,7 +11,8 @@ import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector
 import { firmwareOrchestrator } from '../services/FirmwareOrchestrator';
 import { clampConcurrency, MAX_WAVE_CONCURRENCY, settleWithConcurrency, FLEET_ACTION_CONCURRENCY } from '../utils/concurrency';
 import { updateAvailable, isNewerRosVersion } from '../utils/rosVersion';
-import { newestCompleteFrom } from '../utils/firmwareMirror';
+import { newestCompleteFrom, withMirrorUpdate } from '../utils/firmwareMirror';
+import { mirrorVersions } from '../services/firmwareMirror';
 import { findUpstreamWithinSelection } from '../utils/rolloutTopology';
 import type { StpBridge } from '../utils/stpUpstream';
 import { refuseSecrets } from '../utils/secretAccess';
@@ -121,6 +122,7 @@ router.post('/check-all', requireWrite, async (req, res) => {
   const devices = await query<DeviceRow>(
     `SELECT * FROM devices WHERE status='online' AND NOT ssh_only ${siteFilter ? `AND ${siteFilter}` : ''}`
   );
+  const mirrored = await mirrorVersions(devices.map((d) => d.id)).catch(() => new Map<number, string>());
   // A limited number at a time (#302): this used to contact every device at once.
   const settled = await settleWithConcurrency(devices, FLEET_ACTION_CONCURRENCY, async (d) => {
     const c = new DeviceCollector(d);
@@ -128,9 +130,14 @@ router.post('/check-all', requireWrite, async (req, res) => {
       await c.connect();
       const s = await c.checkForUpdates();
       const installed = (s['installed-version'] || '').trim();
-      const latest = (s['latest-version'] || '').trim();
-      // A version comparison, not a string one (#144).
-      const available = updateAvailable({ installed, latest, status: s['status'] });
+      const own = (s['latest-version'] || '').trim();
+      // A version comparison, not a string one (#144); and what the device's
+      // package mirror holds counts too (#482).
+      const merged = withMirrorUpdate(installed || d.ros_version, {
+        available: updateAvailable({ installed, latest: own, status: s['status'] }), latest: own || null,
+      }, mirrored.get(d.id));
+      const available = merged.available;
+      const latest = merged.latest ?? '';
       await query(
         `UPDATE devices SET ros_version=COALESCE(NULLIF($2,''), ros_version),
                 latest_ros_version=NULLIF($3,''), firmware_update_available=$4 WHERE id=$1`,

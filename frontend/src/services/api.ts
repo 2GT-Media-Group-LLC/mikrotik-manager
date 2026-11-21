@@ -959,6 +959,8 @@ export const devicesApi = {
     api.post<{
       started: boolean; installed_version: string | null;
       target_version?: string; message: string;
+      /** Set when the update is only on the device's package mirror (#482). */
+      mirror_version?: string;
     }>(`/devices/${id}/install-update`),
   getClock: (id: number) => api.get<{ date: string; time: string; timezone: string }>(`/devices/${id}/clock`),
   setClock: (id: number, data: { date?: string; time?: string; timezone?: string }) =>

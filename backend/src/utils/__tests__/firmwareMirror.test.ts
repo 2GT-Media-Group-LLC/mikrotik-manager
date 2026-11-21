@@ -204,3 +204,29 @@ describe('packageRoom (Discussion #85)', () => {
     expect(packageRoom({ needBytes: 12 * MB, freeHdd: 0, freeMemory: 0, totalMemory: 0, ramRoot: false }).ok).toBe(true);
   });
 });
+
+import { withMirrorUpdate } from '../firmwareMirror';
+
+describe('withMirrorUpdate (#482)', () => {
+  const none = { available: false, latest: null };
+
+  it('a newer version on the mirror is an update, even when the device found nothing itself', () => {
+    expect(withMirrorUpdate('7.21.4', none, '7.22')).toEqual({ available: true, latest: '7.22' });
+  });
+
+  it('nothing newer on the mirror leaves the device\'s own answer alone', () => {
+    expect(withMirrorUpdate('7.22', none, '7.22')).toEqual(none);
+    expect(withMirrorUpdate('7.22', none, '7.21.4')).toEqual(none);
+    expect(withMirrorUpdate('7.21', { available: true, latest: '7.22' }, null)).toEqual({ available: true, latest: '7.22' });
+  });
+
+  it('shows the newer of the two versions', () => {
+    expect(withMirrorUpdate('7.20', { available: true, latest: '7.22' }, '7.21.4')).toEqual({ available: true, latest: '7.22' });
+    expect(withMirrorUpdate('7.20', { available: true, latest: '7.21' }, '7.21.4')).toEqual({ available: true, latest: '7.21.4' });
+  });
+
+  it('an installed version it can\'t read is not offered the mirror\'s', () => {
+    expect(withMirrorUpdate(null, none, '7.22')).toEqual(none);
+    expect(withMirrorUpdate('', none, '7.22')).toEqual(none);
+  });
+});
