@@ -7,6 +7,19 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.30
+
+Released on Saturday 21 November 2026.
+
+- **Devices that get their updates from the package mirror now show them everywhere.** The
+  Firmware page knew the mirror held a newer version for a device, but the Dashboard, the device
+  list, the device's own page, alerts and reports only went by the device's own check with
+  MikroTik, which finds nothing on a switch with no internet. They now count the mirror too,
+  within about ten minutes of a sync, in Dark Site Mode as well. **Install & Reboot** on such a
+  device says to upgrade it with a mirror rollout instead of calling it up to date
+  ([Local package mirror](firmware.md#switching-devices-to-the-mirror)). Thanks to
+  [@ddavehauser](https://github.com/ddavehauser) for [#482](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/482).
+
 ## 1.0.29
 
 Released on Friday 20 November 2026. Two security fixes from the 1.1 security review, and a
