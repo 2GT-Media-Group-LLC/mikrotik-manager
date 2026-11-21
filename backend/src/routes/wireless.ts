@@ -16,6 +16,7 @@ import { aggregateAPScanRows, mergeScanRows } from '../utils/apScan';
 import { BAND_RANGES } from '../utils/rfSpectrum';
 import { fluxString } from '@influxdata/influxdb-client';
 import { CLIENT_SIGHTINGS } from '../utils/clientPorts';
+import { queryLimit } from '../utils/queryLimit';
 
 const router = Router();
 router.use(requireAuth);
@@ -759,7 +760,7 @@ router.post('/:id/spectral-scan/:iface', requireWrite, async (req: Request, res:
 router.get('/:id/spectral-history/:iface', async (req: Request, res: Response) => {
   const deviceId = parseInt(req.params.id);
   const iface = req.params.iface;
-  const limit = Math.min(parseInt(String(req.query.limit || '5'), 10), 20);
+  const limit = queryLimit(req.query.limit, 5, 20);
 
   const scans = await query<{ id: number; scanned_at: string; scan_type: string; data: unknown }>(
     `SELECT id, scanned_at, scan_type, data
@@ -828,7 +829,7 @@ router.post('/:id/ap-scan', requireWrite, async (req: Request, res: Response) =>
 // GET /api/wireless/:id/ap-scan-history?limit=5 — last N saved scans
 router.get('/:id/ap-scan-history', async (req: Request, res: Response) => {
   const deviceId = parseInt(req.params.id);
-  const limit = Math.min(parseInt(String(req.query.limit || '5'), 10), 20);
+  const limit = queryLimit(req.query.limit, 5, 20);
 
   const scans = await query<{ id: number; scanned_at: string; scan_type: string; data: unknown }>(
     `SELECT id, scanned_at, scan_type, data

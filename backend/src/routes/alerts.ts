@@ -3,6 +3,7 @@ import { query } from '../config/database';
 import { requireAuth, requireWrite, fleetOnly } from '../middleware/auth';
 import { alertService } from '../services/AlertService';
 import { maskConfig, mergeConfig, sealConfig, sealedSecretInput, PLAIN_SECRET_ERROR } from '../utils/alertChannelSecrets';
+import { queryLimit } from '../utils/queryLimit';
 
 const router = Router();
 
@@ -204,7 +205,7 @@ router.post('/channels/:id/test', requireWrite, async (req, res) => {
 
 /** GET /api/alerts/history?limit=50 */
 router.get('/history', async (req, res) => {
-  const limit = Math.min(parseInt(String(req.query.limit ?? 50), 10), 200);
+  const limit = queryLimit(req.query.limit, 50, 200);
   const rows = await query(
     `SELECT h.id, h.event_type, h.device_id, h.device_name, h.message,
             h.channels_notified, h.sent_at

@@ -83,6 +83,7 @@ import { parseBridgeCreate, parseBridgeUpdate } from '../utils/bridgeEdit';
 import { tracerouteHops } from '../utils/traceroute';
 import { bridgesView } from '../utils/bridgesView';
 import { opticStatuses, opticHistory, dropThreshold, rxLimits } from '../services/opticLevels';
+import { queryLimit } from '../utils/queryLimit';
 
 const router = Router();
 router.use(requireAuth);
@@ -1810,7 +1811,7 @@ router.delete('/:id/address-lists/:entryId', requireWrite, async (req, res) => {
 
 // ─── Active Connections (read-only) ─────────────────────────────────────────────
 router.get('/:id/connections', async (req, res) => {
-  const limit = Math.max(1, Math.min(parseInt(String(req.query.limit || '200'), 10) || 200, 2000));
+  const limit = queryLimit(req.query.limit, 200, 2000);
   const protocol = String(req.query.protocol ?? '').toLowerCase();
   if (protocol && !/^[a-z0-9-]{1,16}$/.test(protocol)) return res.status(400).json({ error: 'protocol must be a protocol name' });
   await withCollector(req.params.id, res, async (c) => {

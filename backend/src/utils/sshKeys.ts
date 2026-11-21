@@ -35,6 +35,17 @@ export function keyComment(deviceId: number, suffix?: string): string {
 }
 
 /**
+ * Whether a key's comment (RouterOS shows it as `info`) is one this comment
+ * names: the comment itself, or it with a per-key suffix. Not a substring:
+ * device 1's comment is the start of device 12's, and removing device 1's
+ * keys took device 12's with them.
+ */
+export function keyCommentMatches(info: string | null | undefined, comment: string): boolean {
+  if (!comment) return false;
+  return String(info ?? '').split(/\s+/).some((t) => t === comment || t.startsWith(`${comment}-`));
+}
+
+/**
  * A short, unique tag per generated key.
  *
  * Every key for a device once shared one comment, and RouterOS matches on it —

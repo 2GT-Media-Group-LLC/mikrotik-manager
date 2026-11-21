@@ -6,6 +6,7 @@ import { netflowCollector } from '../services/netflow/NetflowCollector';
 import { fluxString } from '@influxdata/influxdb-client';
 import { activeSite } from '../middleware/site';
 import { siteList } from '../utils/siteScope';
+import { queryLimit } from '../utils/queryLimit';
 
 const router = Router();
 router.use(requireAuth);
@@ -125,7 +126,7 @@ router.get('/timeseries', async (req: Request, res: Response) => {
 // GET /api/traffic/top-clients?range=24h&limit=10 — top talkers with client names
 router.get('/top-clients', async (req: Request, res: Response) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
-  const limit = Math.min(parseInt(String(req.query.limit || '10'), 10) || 10, 50);
+  const limit = queryLimit(req.query.limit, 10, 50);
   const queryApi = getQueryApi();
   const site = await siteFilter(req);
 

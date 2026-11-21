@@ -26,10 +26,19 @@ export async function totpLockedOut(userId: number): Promise<boolean> {
   }
 }
 
+/**
+ * Count and expiry in one step. As two commands, a restart between them left a
+ * counter with no expiry, and an account at the limit locked out for good.
+ */
+const FAIL_SCRIPT = `
+local n = redis.call('INCR', KEYS[1])
+if redis.call('TTL', KEYS[1]) < 0 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+return n
+`;
+
 export async function recordTotpFailure(userId: number): Promise<void> {
   try {
-    const n = await redis.incr(failKey(userId));
-    if (n === 1) await redis.expire(failKey(userId), FAILURE_WINDOW_S);
+    await redis.eval(FAIL_SCRIPT, 1, failKey(userId), String(FAILURE_WINDOW_S));
   } catch { /* no Redis: per-address limit only */ }
 }
 
