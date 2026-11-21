@@ -268,6 +268,27 @@ beta, sent a fix or reported a problem:
 - [@schmitt330](https://github.com/schmitt330): device tools on RouterOS 6.
 - [@orshih6](https://github.com/orshih6): a security report on the release workflow.
 
+## 1.1.0-rc.3
+
+The security fix and hardening in 1.0.31 below, from an outside review of rc.1.
+
+- **Viewers and read-only API tokens could read command output, which can contain secrets**
+  ([GHSA-rr75-cq8g-v6gq](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-rr75-cq8g-v6gq)). What
+  each device printed for a command run, and the run's CSV export, needed only viewer access, and
+  only `{{secret:...}}` values were masked in it. A run that printed Wi-Fi or WireGuard keys showed
+  them to accounts that see `••••••••` everywhere else. Output is now for operators and admins;
+  viewers see each device's status and errors, with a note saying why. If viewers or `read` tokens
+  may have read such a run, consider changing those secrets.
+- **Removing one device's SSH key could remove another's.** The match was on the start of the key's
+  comment, so revoking device 1's key also took device 12's, which then lost SSH. It now matches
+  that device's keys only.
+- **Changing your password, and setting up or turning off two-factor, have a limit per account**
+  (10 tries per 15 minutes), so a stolen session can't keep guessing the account password. The
+  two-factor lockout counter can no longer be left without an expiry by a restart.
+- **Smaller hardening**: scripts, styles and images carry the same security headers as pages; a
+  negative or non-numeric `?limit=` gets the default instead of an error; only admins are told the
+  admin account still has its default password; the username in the SSH key import is quoted.
+
 ## 1.1.0-rc.2
 
 The fix in 1.0.30 below.
@@ -1446,6 +1467,28 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.31
+
+Released on Saturday 21 November 2026. A security fix, and hardening from an outside review of
+1.1; update soon if you have viewers or `read` API tokens.
+
+- **Viewers and read-only API tokens could read command output, which can contain secrets**
+  ([GHSA-rr75-cq8g-v6gq](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-rr75-cq8g-v6gq)). What
+  each device printed for a command run, and the run's CSV export, needed only viewer access, and
+  only `{{secret:...}}` values were masked in it. A run that printed Wi-Fi or WireGuard keys showed
+  them to accounts that see `••••••••` everywhere else. Output is now for operators and admins;
+  viewers see each device's status and errors, with a note saying why. If viewers or `read` tokens
+  may have read such a run, consider changing those secrets.
+- **Removing one device's SSH key could remove another's.** The match was on the start of the key's
+  comment, so revoking device 1's key also took device 12's, which then lost SSH. It now matches
+  that device's keys only.
+- **Changing your password, and setting up or turning off two-factor, have a limit per account**
+  (10 tries per 15 minutes), so a stolen session can't keep guessing the account password. The
+  two-factor lockout counter can no longer be left without an expiry by a restart.
+- **Smaller hardening**: scripts, styles and images carry the same security headers as pages; a
+  negative or non-numeric `?limit=` gets the default instead of an error; only admins are told the
+  admin account still has its default password; the username in the SSH key import is quoted.
 
 ## 1.0.30
 
