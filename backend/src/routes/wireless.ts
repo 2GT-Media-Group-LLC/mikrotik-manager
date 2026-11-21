@@ -21,6 +21,7 @@ import {
   CAPSMAN_PATHS, capIsLocal, defaultFlavor, ownItems, parseCapsmanSetup, planCapsman,
   ruleBand, type CapsmanFlavor, type CapsmanLive,
 } from '../utils/capsmanSetup';
+import { queryLimit } from '../utils/queryLimit';
 
 const router = Router();
 router.use(antennaAlignmentRoutes);
@@ -889,7 +890,7 @@ router.post('/:id/spectral-scan/:iface', requireWrite, async (req, res) => {
 router.get('/:id/spectral-history/:iface', async (req, res) => {
   const deviceId = parseInt(req.params.id);
   const iface = req.params.iface;
-  const limit = Math.min(parseInt(String(req.query.limit || '5'), 10), 20);
+  const limit = queryLimit(req.query.limit, 5, 20);
 
   const scans = await query<{ id: number; scanned_at: string; scan_type: string; data: unknown }>(
     `SELECT id, scanned_at, scan_type, data
@@ -958,7 +959,7 @@ router.post('/:id/ap-scan', requireWrite, async (req, res) => {
 // GET /api/wireless/:id/ap-scan-history?limit=5 — last N saved scans
 router.get('/:id/ap-scan-history', async (req, res) => {
   const deviceId = parseInt(req.params.id);
-  const limit = Math.min(parseInt(String(req.query.limit || '5'), 10), 20);
+  const limit = queryLimit(req.query.limit, 5, 20);
 
   const scans = await query<{ id: number; scanned_at: string; scan_type: string; data: unknown }>(
     `SELECT id, scanned_at, scan_type, data

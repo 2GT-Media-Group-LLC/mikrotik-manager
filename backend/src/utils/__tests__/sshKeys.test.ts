@@ -144,3 +144,28 @@ describe('importRejection', () => {
     expect(importRejection('input does not match any value of user')).toMatch(/does not match/);
   });
 });
+
+import { keyCommentMatches } from '../sshKeys';
+
+describe('keyCommentMatches', () => {
+  it("device 1's comment doesn't take device 12's keys", () => {
+    expect(keyCommentMatches('mikrotik-manager-device-12', 'mikrotik-manager-device-1')).toBe(false);
+    expect(keyCommentMatches('mikrotik-manager-device-12-k3x9', 'mikrotik-manager-device-1')).toBe(false);
+  });
+
+  it('matches the base comment and every per-key suffix of it', () => {
+    expect(keyCommentMatches('mikrotik-manager-device-1', 'mikrotik-manager-device-1')).toBe(true);
+    expect(keyCommentMatches('mikrotik-manager-device-1-k3x9', 'mikrotik-manager-device-1')).toBe(true);
+    expect(keyCommentMatches('admin@host mikrotik-manager-device-1-k3x9', 'mikrotik-manager-device-1')).toBe(true);
+  });
+
+  it('a full comment with its suffix matches only that key', () => {
+    expect(keyCommentMatches('mikrotik-manager-device-1-k3x9', 'mikrotik-manager-device-1-k3x9')).toBe(true);
+    expect(keyCommentMatches('mikrotik-manager-device-1-k3x99', 'mikrotik-manager-device-1-k3x9')).toBe(false);
+  });
+
+  it('an empty comment matches nothing', () => {
+    expect(keyCommentMatches('mikrotik-manager-device-1', '')).toBe(false);
+    expect(keyCommentMatches(undefined, 'mikrotik-manager-device-1')).toBe(false);
+  });
+});

@@ -12,6 +12,7 @@ import { namesForAddresses } from '../utils/addressNames';
 import { OTHER_REMOTE } from '../services/netflow/DestinationAggregator';
 import net from 'net';
 import { timeWindow, pointSeconds, BAD_WINDOW, type TimeWindow } from '../utils/trafficWindow';
+import { queryLimit } from '../utils/queryLimit';
 
 const router = Router();
 router.use(requireAuth);
@@ -144,7 +145,7 @@ async function withClientNames<T extends { mac: string }>(req: Request, rows: T[
 router.get('/top-clients', async (req, res) => {
   const w = timeWindow(req.query);
   if (!w) return res.status(400).json({ error: BAD_WINDOW });
-  const limit = Math.min(parseInt(String(req.query.limit || '10'), 10) || 10, 50);
+  const limit = queryLimit(req.query.limit, 10, 50);
   const queryApi = getQueryApi();
   const site = await siteFilter(req);
 
@@ -242,7 +243,7 @@ router.get('/apps/:app/clients', async (req, res) => {
   if (!/^[\x20-\x7e]{1,64}$/.test(app)) return res.status(400).json({ error: 'Invalid application' });
   const w = timeWindow(req.query);
   if (!w) return res.status(400).json({ error: BAD_WINDOW });
-  const limit = Math.min(parseInt(String(req.query.limit || '50'), 10) || 50, 200);
+  const limit = queryLimit(req.query.limit, 50, 200);
   const site = await siteFilter(req);
 
   const fluxQuery = `
@@ -436,7 +437,7 @@ router.get('/dns', async (req, res) => {
     if (!mac) return res.status(400).json({ error: 'Invalid mac' });
     ips = await clientIps(req, mac);
   }
-  const limit = Math.min(parseInt(String(req.query.limit || '50'), 10) || 50, 200);
+  const limit = queryLimit(req.query.limit, 50, 200);
   const sites = siteList(activeSite(req));
   const params: unknown[] = [hourStart(w)];
   let where = 'hour >= $1';
@@ -519,7 +520,7 @@ router.get('/destinations', async (req, res) => {
     if (!m) return res.status(400).json({ error: 'Invalid mac' });
     mac = m;
   }
-  const limit = Math.min(parseInt(String(req.query.limit || '50'), 10) || 50, 200);
+  const limit = queryLimit(req.query.limit, 50, 200);
   const w = timeWindow(req.query);
   if (!w) return res.status(400).json({ error: BAD_WINDOW });
   const { where, params } = destinationScope(req, w, { app, mac });

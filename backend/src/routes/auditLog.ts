@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireSettingsRead } from '../middleware/auth';
+import { queryLimit } from '../utils/queryLimit';
 
 const router = Router();
 router.use(requireAuth);
@@ -10,7 +11,7 @@ router.use(requireSettingsRead);
 // GET /api/audit-log?page=1&limit=50&userId=&entityType=&search=&from=&to=
 router.get('/', async (req, res) => {
   const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
-  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '50'), 10)));
+  const limit = queryLimit(req.query.limit, 50, 100);
   const offset = (page - 1) * limit;
 
   const conditions: string[] = [];

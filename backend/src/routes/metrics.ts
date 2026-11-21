@@ -11,6 +11,7 @@ import { activeSite } from '../middleware/site';
 import { fluxString } from '@influxdata/influxdb-client';
 import { latestResources, latestInterfaceCounters } from '../services/latestMetrics';
 import { linkSpeedBps, pickBusiest, ifaceSpeed, ifaceOrder, type GraphIface } from '../utils/deviceGraphs';
+import { queryLimit } from '../utils/queryLimit';
 
 const router = Router();
 router.use(requireAuth);
@@ -137,7 +138,7 @@ router.get('/clients-over-time', async (req, res) => {
 
 // GET /api/metrics/top-clients?limit=10&range=24h
 router.get('/top-clients', async (req, res) => {
-  const limit = Math.min(parseInt(String(req.query.limit || '10'), 10), 50);
+  const limit = queryLimit(req.query.limit, 10, 50);
   const topFilter = siteScopeByDevice(activeSite(req), 'c.device_id');
 
   // Use postgres data (most recent client data)

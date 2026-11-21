@@ -15,11 +15,12 @@ import { Client as SSHClient } from 'ssh2';
 import { query, queryOne } from '../config/database';
 import { encrypt, decrypt } from '../utils/crypto';
 import {
-  generateDeviceKeyPair, keyFileName, keyComment, isUsablePrivateKey, keyTypeForVersion, importRejection, type KeyStatus,
+  generateDeviceKeyPair, keyFileName, keyComment, keyCommentMatches, isUsablePrivateKey, keyTypeForVersion, importRejection, type KeyStatus,
 } from '../utils/sshKeys';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
 import { usesApiTls } from '../utils/apiTls';
 import { resolveKeyCredentials } from '../utils/sshKeyCredentials';
+import { rosQuote } from '../utils/configTemplateConvert';
 import { sshHostCheck, explainSshError } from './sshHostCheck';
 import { routeOf, sshRoute } from './jumpHosts';
 
@@ -158,7 +159,7 @@ export class SshKeyService {
       const keys = await client.execute('/user/ssh-keys/print', { detail: '' });
       for (const k of keys) {
         const matchesFp = wantFp != null && norm(k['fingerprint'] || '') === wantFp;
-        const matchesComment = comment.length > 0 && (k['info'] || '').includes(comment);
+        const matchesComment = keyCommentMatches(k['info'], comment);
         if (matchesFp || matchesComment) {
           await client.execute('/user/ssh-keys/remove', { '.id': k['.id'] });
           removed++;
@@ -264,7 +265,10 @@ export class SshKeyService {
         await putFile(conn, fileName, pair.publicKey + '\n');
         // Space-separated menu paths: RouterOS 6 rejects the /user/ssh-keys form
         // that v7 accepts, and v7 accepts both.
-        const out = await exec(conn, `/user ssh-keys import public-key-file=${fileName} user=${username}`);
+        // Quoted, and refused with a control character in it: the username is
+        // stored text, and this line goes to the router's console.
+        if ([...username].some((c) => c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f)) throw new Error('The SSH username contains a control character');
+        const out = await exec(conn, `/user ssh-keys import public-key-file=${fileName} user=${rosQuote(username)}`);
         const rejected = importRejection(out);
         if (rejected) throw new Error(`Device rejected the key import: ${rejected}`);
         // RouterOS deletes the key file itself as part of the import. A plain
@@ -347,7 +351,7 @@ export class SshKeyService {
     try {
       await client.connect();
       const keys = await client.execute('/user/ssh-keys/print', { detail: '' });
-      return keys.filter((k) => (k['info'] || '').includes(keyComment(target.id))).length;
+      return keys.filter((k) => keyCommentMatches(k['info'], keyComment(target.id))).length;
     } finally {
       client.disconnect();
     }
