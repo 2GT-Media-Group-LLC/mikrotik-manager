@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1030" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.30
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1029" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1797,6 +1808,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1030" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.30
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1029" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2213,6 +2235,18 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1030">1.0.30<a class="headerlink" href="#1030" title="Permanent link">&para;</a></h2>
+<p>Released on Saturday 21 November 2026.</p>
+<ul>
+<li><strong>Devices that get their updates from the package mirror now show them everywhere.</strong> The
+  Firmware page knew the mirror held a newer version for a device, but the Dashboard, the device
+  list, the device's own page, alerts and reports only went by the device's own check with
+  MikroTik, which finds nothing on a switch with no internet. They now count the mirror too,
+  within about ten minutes of a sync, in Dark Site Mode as well. <strong>Install &amp; Reboot</strong> on such a
+  device says to upgrade it with a mirror rollout instead of calling it up to date
+  (<a href="../firmware/#switching-devices-to-the-mirror">Local package mirror</a>). Thanks to
+  <a href="https://github.com/ddavehauser">@ddavehauser</a> for <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/482">#482</a>.</li>
+</ul>
 <h2 id="1029">1.0.29<a class="headerlink" href="#1029" title="Permanent link">&para;</a></h2>
 <p>Released on Friday 20 November 2026. Two security fixes from the 1.1 security review, and a
 RouterBOOT fix from Steven Wilton (<a href="https://github.com/eskyuu">@eskyuu</a>); update soon.</p>
