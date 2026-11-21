@@ -748,6 +748,8 @@ export interface CommandRunDevice {
 
 export interface CommandRunDetail extends CommandRunSummary {
   devices: CommandRunDevice[];
+  /** Device output is for operators and admins; a viewer gets none. */
+  output_hidden?: boolean;
 }
 
 // ─── Command templates (#163) ───────────────────────────────────────────────
