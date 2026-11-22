@@ -410,6 +410,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.3
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc2" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2476,6 +2487,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.3
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc2" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3592,6 +3614,26 @@ beta, sent a fix or reported a problem:</p>
   carrier's replies, and readable chart labels.</li>
 <li><a href="https://github.com/schmitt330">@schmitt330</a>: device tools on RouterOS 6.</li>
 <li><a href="https://github.com/orshih6">@orshih6</a>: a security report on the release workflow.</li>
+</ul>
+<h2 id="110-rc3">1.1.0-rc.3<a class="headerlink" href="#110-rc3" title="Permanent link">&para;</a></h2>
+<p>The security fix and hardening in 1.0.31 below, from an outside review of rc.1.</p>
+<ul>
+<li><strong>Viewers and read-only API tokens could read command output, which can contain secrets</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-rr75-cq8g-v6gq">GHSA-rr75-cq8g-v6gq</a>). What
+  each device printed for a command run, and the run's CSV export, needed only viewer access, and
+  only <code>{{secret:...}}</code> values were masked in it. A run that printed Wi-Fi or WireGuard keys showed
+  them to accounts that see <code>••••••••</code> everywhere else. Output is now for operators and admins;
+  viewers see each device's status and errors, with a note saying why. If viewers or <code>read</code> tokens
+  may have read such a run, consider changing those secrets.</li>
+<li><strong>Removing one device's SSH key could remove another's.</strong> The match was on the start of the key's
+  comment, so revoking device 1's key also took device 12's, which then lost SSH. It now matches
+  that device's keys only.</li>
+<li><strong>Changing your password, and setting up or turning off two-factor, have a limit per account</strong>
+  (10 tries per 15 minutes), so a stolen session can't keep guessing the account password. The
+  two-factor lockout counter can no longer be left without an expiry by a restart.</li>
+<li><strong>Smaller hardening</strong>: scripts, styles and images carry the same security headers as pages; a
+  negative or non-numeric <code>?limit=</code> gets the default instead of an error; only admins are told the
+  admin account still has its default password; the username in the SSH key import is quoted.</li>
 </ul>
 <h2 id="110-rc2">1.1.0-rc.2<a class="headerlink" href="#110-rc2" title="Permanent link">&para;</a></h2>
 <p>The fix in 1.0.30 below.</p>
@@ -4727,6 +4769,27 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1031">1.0.31<a class="headerlink" href="#1031" title="Permanent link">&para;</a></h2>
+<p>Released on Saturday 21 November 2026. A security fix, and hardening from an outside review of
+1.1; update soon if you have viewers or <code>read</code> API tokens.</p>
+<ul>
+<li><strong>Viewers and read-only API tokens could read command output, which can contain secrets</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-rr75-cq8g-v6gq">GHSA-rr75-cq8g-v6gq</a>). What
+  each device printed for a command run, and the run's CSV export, needed only viewer access, and
+  only <code>{{secret:...}}</code> values were masked in it. A run that printed Wi-Fi or WireGuard keys showed
+  them to accounts that see <code>••••••••</code> everywhere else. Output is now for operators and admins;
+  viewers see each device's status and errors, with a note saying why. If viewers or <code>read</code> tokens
+  may have read such a run, consider changing those secrets.</li>
+<li><strong>Removing one device's SSH key could remove another's.</strong> The match was on the start of the key's
+  comment, so revoking device 1's key also took device 12's, which then lost SSH. It now matches
+  that device's keys only.</li>
+<li><strong>Changing your password, and setting up or turning off two-factor, have a limit per account</strong>
+  (10 tries per 15 minutes), so a stolen session can't keep guessing the account password. The
+  two-factor lockout counter can no longer be left without an expiry by a restart.</li>
+<li><strong>Smaller hardening</strong>: scripts, styles and images carry the same security headers as pages; a
+  negative or non-numeric <code>?limit=</code> gets the default instead of an error; only admins are told the
+  admin account still has its default password; the username in the SSH key import is quoted.</li>
+</ul>
 <h2 id="1030">1.0.30<a class="headerlink" href="#1030" title="Permanent link">&para;</a></h2>
 <p>Released on Saturday 21 November 2026.</p>
 <ul>
