@@ -268,6 +268,19 @@ beta, sent a fix or reported a problem:
 - [@schmitt330](https://github.com/schmitt330): device tools on RouterOS 6.
 - [@orshih6](https://github.com/orshih6): a security report on the release workflow.
 
+## 1.1.0-rc.4
+
+The fix in 1.0.32 below.
+
+- **Downloads through a router with a private WAN address are counted for the right client.**
+  A router behind an ISP modem or CGNAT (its WAN address 192.168.x, 10.x or 100.64.x) had nearly
+  all of its downloads shown in Traffic as **Unattributed (local)**, while uploads went to the
+  right clients. Downloads are recorded at the WAN, addressed to the router, and the LAN client
+  was taken from the post-NAT address only when the WAN address was public. It is now taken
+  whenever that address is local. Traffic already recorded stays where it is. The Traffic page
+  docs now say what Unattributed (local) means (Discussion #486, from
+  [@godlessmind](https://github.com/godlessmind)).
+
 ## 1.1.0-rc.3
 
 The security fix and hardening in 1.0.31 below, from an outside review of rc.1.
@@ -1467,6 +1480,19 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.32
+
+Released on Sunday 22 November 2026. A fix for Traffic.
+
+- **Downloads through a router with a private WAN address are counted for the right client.**
+  A router behind an ISP modem or CGNAT (its WAN address 192.168.x, 10.x or 100.64.x) had nearly
+  all of its downloads shown in Traffic as **Unattributed (local)**, while uploads went to the
+  right clients. Downloads are recorded at the WAN, addressed to the router, and the LAN client
+  was taken from the post-NAT address only when the WAN address was public. It is now taken
+  whenever that address is local. Traffic already recorded stays where it is. The Traffic page
+  docs now say what Unattributed (local) means (Discussion #486, from
+  [@godlessmind](https://github.com/godlessmind)).
 
 ## 1.0.31
 
