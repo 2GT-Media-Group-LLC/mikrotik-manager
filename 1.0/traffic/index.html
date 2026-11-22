@@ -1638,6 +1638,13 @@ the all-sites view only.</p>
 </table>
 <p>Top talkers can be filtered by IP, name, MAC or vendor, and sorted. Selecting a client opens
 its detail page — see <a href="../clients/">Clients</a>.</p>
+<p><strong>Unattributed (local)</strong> is traffic whose local end is a private, CGNAT or link-local address
+that MikroTik Manager can't match to a client it knows in that site, such as a host it hasn't
+seen in DHCP or ARP. Downloads through NAT are recorded as they arrive on the WAN, addressed to
+the router, and are counted for the LAN client from the post-NAT destination, so leave
+<code>nat-dst-address</code> on in the router's IPFIX settings (<strong>IP &gt; Traffic Flow &gt; IPFIX</strong>; it is on by
+default). Before 1.0.32, a router whose WAN address is itself private (behind an ISP modem or
+CGNAT) had its downloads counted here instead (Discussion #486).</p>
 <p>With a site selected, every view shows that site's traffic only, and accounts limited to
 particular sites see only theirs. <strong>Flow Sources &amp; Data Health</strong> lists that site's exporting
 devices too; its packet and attribution counts are the collector's own and cover every site.
