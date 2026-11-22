@@ -410,6 +410,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.4
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc3" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2487,6 +2498,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.4
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc3" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3614,6 +3636,18 @@ beta, sent a fix or reported a problem:</p>
   carrier's replies, and readable chart labels.</li>
 <li><a href="https://github.com/schmitt330">@schmitt330</a>: device tools on RouterOS 6.</li>
 <li><a href="https://github.com/orshih6">@orshih6</a>: a security report on the release workflow.</li>
+</ul>
+<h2 id="110-rc4">1.1.0-rc.4<a class="headerlink" href="#110-rc4" title="Permanent link">&para;</a></h2>
+<p>The fix in 1.0.32 below.</p>
+<ul>
+<li><strong>Downloads through a router with a private WAN address are counted for the right client.</strong>
+  A router behind an ISP modem or CGNAT (its WAN address 192.168.x, 10.x or 100.64.x) had nearly
+  all of its downloads shown in Traffic as <strong>Unattributed (local)</strong>, while uploads went to the
+  right clients. Downloads are recorded at the WAN, addressed to the router, and the LAN client
+  was taken from the post-NAT address only when the WAN address was public. It is now taken
+  whenever that address is local. Traffic already recorded stays where it is. The Traffic page
+  docs now say what Unattributed (local) means (Discussion #486, from
+  <a href="https://github.com/godlessmind">@godlessmind</a>).</li>
 </ul>
 <h2 id="110-rc3">1.1.0-rc.3<a class="headerlink" href="#110-rc3" title="Permanent link">&para;</a></h2>
 <p>The security fix and hardening in 1.0.31 below, from an outside review of rc.1.</p>
@@ -4769,6 +4803,18 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1032">1.0.32<a class="headerlink" href="#1032" title="Permanent link">&para;</a></h2>
+<p>Released on Sunday 22 November 2026. A fix for Traffic.</p>
+<ul>
+<li><strong>Downloads through a router with a private WAN address are counted for the right client.</strong>
+  A router behind an ISP modem or CGNAT (its WAN address 192.168.x, 10.x or 100.64.x) had nearly
+  all of its downloads shown in Traffic as <strong>Unattributed (local)</strong>, while uploads went to the
+  right clients. Downloads are recorded at the WAN, addressed to the router, and the LAN client
+  was taken from the post-NAT address only when the WAN address was public. It is now taken
+  whenever that address is local. Traffic already recorded stays where it is. The Traffic page
+  docs now say what Unattributed (local) means (Discussion #486, from
+  <a href="https://github.com/godlessmind">@godlessmind</a>).</li>
+</ul>
 <h2 id="1031">1.0.31<a class="headerlink" href="#1031" title="Permanent link">&para;</a></h2>
 <p>Released on Saturday 21 November 2026. A security fix, and hardening from an outside review of
 1.1; update soon if you have viewers or <code>read</code> API tokens.</p>
