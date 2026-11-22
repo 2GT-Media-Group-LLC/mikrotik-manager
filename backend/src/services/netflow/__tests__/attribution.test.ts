@@ -95,10 +95,14 @@ describe('attributionDestination (#345)', () => {
   it('uses the post-NAT destination for a download through NAT', () => {
     expect(attributionDestination({ dstAddr: '203.0.113.7', natDstAddr: '10.200.10.27' })).toBe('10.200.10.27');
   });
-  it('leaves a local destination, or a public post-NAT one, alone', () => {
+  it('uses it when the WAN address is private too (behind a modem or CGNAT, Discussion #486)', () => {
+    expect(attributionDestination({ dstAddr: '192.168.1.50', natDstAddr: '10.200.10.27' })).toBe('10.200.10.27');
+    expect(attributionDestination({ dstAddr: '100.72.4.9', natDstAddr: '192.168.88.20' })).toBe('192.168.88.20');
+  });
+  it('leaves a flow without NAT, or a public post-NAT destination, alone', () => {
     expect(attributionDestination({ dstAddr: '10.200.10.27' })).toBe('10.200.10.27');
-    expect(attributionDestination({ dstAddr: '10.200.10.27', natDstAddr: '10.200.99.1' })).toBe('10.200.10.27');
     expect(attributionDestination({ dstAddr: '93.184.216.34', natDstAddr: '198.51.100.9' })).toBe('93.184.216.34');
+    expect(attributionDestination({ dstAddr: '192.168.88.1', natDstAddr: '8.8.8.8' })).toBe('192.168.88.1');
   });
 });
 

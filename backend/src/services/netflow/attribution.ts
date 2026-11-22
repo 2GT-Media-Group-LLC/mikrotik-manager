@@ -194,12 +194,15 @@ export function matchClient(maps: AttributionMaps, exporter: ExporterInfo | null
 /**
  * The destination to attribute a flow by (#345). RouterOS records a download
  * where it enters the WAN, before NAT is reversed, so its destination is the
- * router's public address and the LAN client is only in the post-NAT
- * destination. Inbound port forwards look the same. Used only when the
- * recorded destination isn't local and the post-NAT one is.
+ * router's WAN address and the LAN client is only in the post-NAT
+ * destination. Inbound port forwards look the same. Used whenever the
+ * post-NAT destination is local: the WAN address can be private too, behind
+ * an ISP modem or CGNAT, and then every download was left on the router's own
+ * address, as "Unattributed (local)" (Discussion #486). A public post-NAT
+ * destination is left alone.
  */
 export function attributionDestination(flow: { dstAddr: string; natDstAddr?: string }): string {
-  if (flow.natDstAddr && !isLocalAddress(flow.dstAddr) && isLocalAddress(flow.natDstAddr)) return flow.natDstAddr;
+  if (flow.natDstAddr && isLocalAddress(flow.natDstAddr)) return flow.natDstAddr;
   return flow.dstAddr;
 }
 

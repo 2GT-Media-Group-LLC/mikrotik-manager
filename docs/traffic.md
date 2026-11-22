@@ -62,6 +62,14 @@ within 10 seconds of each other stay unidentified.
 Top Talkers can be filtered by IP, name, MAC or vendor, and sorted. Selecting a client opens
 its detail page — see [Clients](clients.md).
 
+**Unattributed (local)** is traffic whose local end is a private, CGNAT or link-local address
+that MikroTik Manager can't match to a client it knows in that site, such as a host it hasn't
+seen in DHCP or ARP. Downloads through NAT are recorded as they arrive on the WAN, addressed to
+the router, and are counted for the LAN client from the post-NAT destination, so leave
+`nat-dst-address` on in the router's IPFIX settings (**IP > Traffic Flow > IPFIX**; it is on by
+default). Before 1.0.32 and 1.1.0-rc.4, a router whose WAN address is itself private (behind
+an ISP modem or CGNAT) had its downloads counted here instead (Discussion #486).
+
 Clicking an application in **Traffic by Application**, on the chart or its list, opens the
 clients behind it over the same range: each one's download, upload and share of that
 application's traffic, busiest first, up to 50 (from [@azizfayziev](https://github.com/azizfayziev)'s
