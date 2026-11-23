@@ -52,7 +52,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/ssh2": "^1.15.6",
     "@types/supertest": "^7.2.1",
-    "eslint": "^10.13.0",
+    "eslint": "^10.15.0",
     "eslint-plugin-security": "^4.2.1",
     "fast-check": "4.10.2",
     "jest": "^30.5.2",
