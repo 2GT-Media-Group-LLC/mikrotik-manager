@@ -67,7 +67,7 @@ CGNAT) had its downloads counted here instead (Discussion #486).
 
 With a site selected, every view shows that site's traffic only, and accounts limited to
 particular sites see only theirs. **Flow Sources & Data Health** lists that site's exporting
-devices too; its packet and attribution counts are the collector's own and cover every site.
+devices too; its packet and flow counts are the collector's own and cover every site.
 Unidentified exporters and refused sources belong to no site, so they're listed in the
 all-sites view only. Traffic recorded before 0.24.47 has no site, so on a
 multi-site install it appears in the all-sites view only. On a single-site install, or any

@@ -398,11 +398,11 @@ export default function TrafficAnalyticsPage() {
                   <div className="text-base font-bold text-gray-900 dark:text-white">{formatCount(pktReceived)}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-400 dark:text-slate-500">Flows attributed{status?.site_filtered ? ' (all sites)' : ''}</div>
+                  <div className="text-xs text-gray-400 dark:text-slate-500" title="Flows counted into Traffic, including those in Unattributed (local).">Flows counted{status?.site_filtered ? ' (all sites)' : ''}</div>
                   <div className="text-base font-bold text-gray-900 dark:text-white">{formatCount(status?.flowsAttributed || 0)}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-400 dark:text-slate-500">Attribution rate{status?.site_filtered ? ' (all sites)' : ''}</div>
+                  <div className="text-xs text-gray-400 dark:text-slate-500" title="Packets from a device recognised as the exporter. How much traffic was matched to a client shows in Top Talkers, as what isn't in Unattributed (local) (Discussion #486).">From known exporters{status?.site_filtered ? ' (all sites)' : ''}</div>
                   <div className={clsx('text-base font-bold',
                     attributionRate >= 90 ? 'text-emerald-600 dark:text-emerald-400'
                       : attributionRate >= 60 ? 'text-amber-600 dark:text-amber-400'
