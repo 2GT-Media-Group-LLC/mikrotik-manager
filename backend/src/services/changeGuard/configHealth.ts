@@ -477,34 +477,100 @@ function rulePortInNoVlan(snap: DeviceSnapshot): ConfigFinding[] {
   return out;
 }
 
-/**
- * Two interfaces holding the same address. Only one can answer; which one wins is
- * not something the configuration states.
- */
+type Membership = 'yes' | 'no' | 'unknown';
+
+/** Resolve RouterOS interface lists, including their include/exclude ordering. */
+function interfaceListMembership(
+  snap: DeviceSnapshot, list: string, iface: string, visiting = new Set<string>(),
+): Membership {
+  if (list === 'all') return 'yes';
+  if (list === 'none') return 'no';
+  if (list === 'dynamic' || list === 'static') {
+    const row = snap.interfaces.find((i) => i['name'] === iface);
+    if (!row) return 'unknown';
+    const dynamic = isTrue(row['dynamic']);
+    return (list === 'dynamic' ? dynamic : !dynamic) ? 'yes' : 'no';
+  }
+  const def = (snap.interfaceLists ?? []).find((l) => l['name'] === list);
+  if (!def || visiting.has(list)) return 'unknown';
+  if ((snap.interfaceListMembers ?? []).some((m) =>
+    m['list'] === list && m['interface'] === iface && !isTrue(m['disabled']))) return 'yes';
+
+  const next = new Set(visiting).add(list);
+  const included = rosList(def['include']).map((name) => interfaceListMembership(snap, name, iface, next));
+  const excluded = rosList(def['exclude']).map((name) => interfaceListMembership(snap, name, iface, next));
+  if (excluded.includes('yes') || included.every((m) => m === 'no')) return 'no';
+  if (included.includes('yes') && excluded.every((m) => m === 'no')) return 'yes';
+  return 'unknown';
+}
+
+/** VRF entries are matched in order, including the default main interfaces=all. */
+function addressInterfaceVrf(snap: DeviceSnapshot, iface: string): string | null {
+  if (snap.vrfsRead === false || iface === '?') return null;
+  for (const vrf of snap.vrfs ?? []) {
+    if (isTrue(vrf['disabled']) || isTrue(vrf['invalid'])) continue;
+    const members = rosList(vrf['interfaces']).map((name): Membership => {
+      if (name === iface) return 'yes';
+      if (['all', 'none', 'dynamic', 'static'].includes(name)
+        || (snap.interfaceLists ?? []).some((list) => list['name'] === name)) {
+        return interfaceListMembership(snap, name, iface);
+      }
+      return 'no';
+    });
+    if (members.includes('yes')) return vrf['name']?.trim() || null;
+    if (members.includes('unknown')) return null;
+  }
+  return 'main';
+}
+
+/** Duplicate non-host addresses conflict only within the same VRF. */
 function ruleDuplicateAddress(snap: DeviceSnapshot): ConfigFinding[] {
-  const byAddr = new Map<string, string[]>();
+  const byAddr = new Map<string, Map<string | null, string[]>>();
   for (const a of snap.addresses) {
     if (isTrue(a['disabled']) || isTrue(a['invalid'])) continue;
+    const address = (a['address'] || '').trim();
+    if (!address.includes('/') || /\/32\s*$/.test(address)) continue;
     const ip = stripCidr(a['address']);
     if (!ip) continue;
     const iface = a['actual-interface'] || a['interface'] || '?';
-    byAddr.set(ip, [...(byAddr.get(ip) ?? []), iface]);
+    const vrf = addressInterfaceVrf(snap, iface);
+    const groups = byAddr.get(ip) ?? new Map<string | null, string[]>();
+    groups.set(vrf, [...(groups.get(vrf) ?? []), iface]);
+    byAddr.set(ip, groups);
   }
   const out: ConfigFinding[] = [];
-  for (const [ip, ifaces] of byAddr) {
-    if (ifaces.length < 2) continue;
-    out.push({
-      rule: 'duplicate-address',
-      fingerprint: `duplicate-address:${ip}`,
-      severity: 'warning',
-      title: `${ip} is configured on ${ifaces.length} interfaces`,
-      detail:
-        `${ip} appears on ${ifaces.join(', ')}. Only one of them can answer for it, and which one `
-        + `depends on internal ordering rather than on anything in the configuration.`,
-      remediation: `Remove the address from every interface except the one that should own it.`,
-      docUrl: L2_DOC,
-      objects: [ip, ...ifaces],
-    });
+  for (const [ip, groups] of byAddr) {
+    for (const [vrf, ifaces] of groups) {
+      if (vrf === null || ifaces.length < 2) continue;
+      const vrfSuffix = vrf === 'main' ? '' : ` in VRF ${vrf}`;
+      out.push({
+        rule: 'duplicate-address',
+        fingerprint: vrf === 'main' ? `duplicate-address:${ip}` : `duplicate-address:${ip}:vrf:${vrf}`,
+        severity: 'warning',
+        title: `${ip} is configured on ${ifaces.length} interfaces${vrfSuffix}`,
+        detail:
+          `${ip} appears on ${ifaces.join(', ')}${vrfSuffix}. Only one of them can answer for it, and which one `
+          + `depends on internal ordering rather than on anything in the configuration.`,
+        remediation: `Remove the address from every interface${vrfSuffix} except the one that should own it.`,
+        docUrl: L2_DOC,
+        objects: [ip, ...ifaces],
+      });
+    }
+    const unknown = groups.get(null) ?? [];
+    const allIfaces = [...groups.values()].flat();
+    if (unknown.length && allIfaces.length > 1) {
+      out.push({
+        rule: 'duplicate-address-vrf-unconfirmed',
+        fingerprint: `duplicate-address-vrf-unconfirmed:${ip}`,
+        severity: 'info',
+        title: `Cannot confirm VRF membership for duplicate address ${ip}`,
+        detail: `${ip} appears on ${allIfaces.join(', ')}, but VRF membership could not be determined for `
+          + `${unknown.join(', ')}. The addresses may be in different VRFs and not conflict.`,
+        remediation: 'Check the VRF and interface list configuration and confirm whether these addresses share a VRF.',
+        docUrl: 'https://help.mikrotik.com/docs/spaces/ROS/pages/328206/Virtual+Routing+and+Forwarding+-+VRF',
+        objects: [ip, ...allIfaces],
+      });
+    }
   }
   return out;
 }
