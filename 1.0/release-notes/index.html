@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1033" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.33
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1032" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1830,6 +1841,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1033" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.33
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1032" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2279,6 +2301,16 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1033">1.0.33<a class="headerlink" href="#1033" title="Permanent link">&para;</a></h2>
+<p>Released on Monday 23 November 2026. A label fix for Traffic.</p>
+<ul>
+<li><strong>Traffic's data health labels say what they count.</strong> <strong>Attribution rate</strong> counted packets from
+  a device MTM recognised as the exporter, not packets matched to a client, so it could read 100%
+  while <strong>Unattributed (local)</strong> was large. It's now <strong>From known exporters</strong>, and <strong>Flows
+  attributed</strong> is now <strong>Flows counted</strong>, since it includes flows in Unattributed (local). Thanks to
+  <a href="https://github.com/godlessmind">@godlessmind</a> for the screenshots
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/486">Discussion #486</a>).</li>
+</ul>
 <h2 id="1032">1.0.32<a class="headerlink" href="#1032" title="Permanent link">&para;</a></h2>
 <p>Released on Sunday 22 November 2026. A fix for Traffic.</p>
 <ul>
