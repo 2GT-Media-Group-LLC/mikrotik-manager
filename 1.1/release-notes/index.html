@@ -410,6 +410,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.5
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc4" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2498,6 +2509,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.5
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc4" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3637,6 +3659,10 @@ beta, sent a fix or reported a problem:</p>
 <li><a href="https://github.com/schmitt330">@schmitt330</a>: device tools on RouterOS 6.</li>
 <li><a href="https://github.com/orshih6">@orshih6</a>: a security report on the release workflow.</li>
 </ul>
+<h2 id="110-rc5">1.1.0-rc.5<a class="headerlink" href="#110-rc5" title="Permanent link">&para;</a></h2>
+<p>The fix in 1.0.33 below, and dependency updates: nodemailer 10.6.1, openid-client 6.9.0,
+cron-parser 5.10.6, bullmq 6.7.8, recharts 3.11.0, @tanstack/react-query 5.108.1,
+tailwind-merge 3.7.1, and CodeQL 4.39.4 for the security scans.</p>
 <h2 id="110-rc4">1.1.0-rc.4<a class="headerlink" href="#110-rc4" title="Permanent link">&para;</a></h2>
 <p>The fix in 1.0.32 below.</p>
 <ul>
@@ -4803,6 +4829,16 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1033">1.0.33<a class="headerlink" href="#1033" title="Permanent link">&para;</a></h2>
+<p>Released on Monday 23 November 2026. A label fix for Traffic.</p>
+<ul>
+<li><strong>Traffic's data health labels say what they count.</strong> <strong>Attribution rate</strong> counted packets from
+  a device MTM recognised as the exporter, not packets matched to a client, so it could read 100%
+  while <strong>Unattributed (local)</strong> was large. It's now <strong>From known exporters</strong>, and <strong>Flows
+  attributed</strong> is now <strong>Flows counted</strong>, since it includes flows in Unattributed (local). Thanks to
+  <a href="https://github.com/godlessmind">@godlessmind</a> for the screenshots
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/486">Discussion #486</a>).</li>
+</ul>
 <h2 id="1032">1.0.32<a class="headerlink" href="#1032" title="Permanent link">&para;</a></h2>
 <p>Released on Sunday 22 November 2026. A fix for Traffic.</p>
 <ul>
