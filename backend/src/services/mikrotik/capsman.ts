@@ -578,3 +578,20 @@ export const REMOTE_RADIO = `
 /** REMOTE_RADIO, where the CAP is a managed device with rows of its own (#365). */
 export const REMOTE_MANAGED_RADIO = `${REMOTE_RADIO}
      AND cr.matched_device_id IS NOT NULL`;
+
+/**
+ * Clients on a radio of a CAP (#504). A legacy CAP's own registration table
+ * stays empty, and so does a wifi CAP's when its controller forwards the
+ * traffic: the clients are listed on the controller, which counts them per
+ * radio (same MAC). That count stands in when it is the higher one. Only the
+ * radio itself takes it; a virtual AP has its own entries or none.
+ */
+export function radioClientCount(
+  wlan: Record<string, string>,
+  local: number,
+  controllerPeers: Map<string, number>,
+): number {
+  if (wlan['master-interface']) return local;
+  const fromController = controllerPeers.get((wlan['mac-address'] || '').toUpperCase());
+  return fromController !== undefined && fromController > local ? fromController : local;
+}

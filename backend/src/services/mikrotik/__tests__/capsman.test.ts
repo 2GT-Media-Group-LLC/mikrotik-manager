@@ -1,7 +1,7 @@
 import {
   classifyWifiRole, parseCapsmanStatus, parseCapStatus, isCapsmanManaged,
   normalizeRadios, matchRadiosToDevices, lookupDeviceForMac, matchLegacyRadio, macIndexKeys, buildMacIndex,
-  hasRadios, wirelessDeviceSql, radioDeviceSql, chooseWifiPackage,
+  hasRadios, wirelessDeviceSql, radioDeviceSql, chooseWifiPackage, radioClientCount,
 } from '../capsman';
 
 describe('classifyWifiRole', () => {
@@ -478,5 +478,23 @@ describe('chooseWifiPackage', () => {
     expect(chooseWifiPackage(null, 1)).toBe('wireless');
     expect(chooseWifiPackage(null, 0)).toBe('wireless');
     expect(chooseWifiPackage(null, null)).toBe('none');
+  });
+});
+
+describe('radioClientCount (#504)', () => {
+  const peers = new Map([['D4:CA:6D:BB:0E:57', 3]]);
+
+  it("takes the controller's count for a CAP radio whose own table is empty", () => {
+    expect(radioClientCount({ name: 'wlan1', 'mac-address': 'd4:ca:6d:bb:0e:57' }, 0, peers)).toBe(3);
+  });
+
+  it('keeps the local count when it is higher or the radio is unknown to a controller', () => {
+    expect(radioClientCount({ name: 'wlan1', 'mac-address': 'D4:CA:6D:BB:0E:57' }, 5, peers)).toBe(5);
+    expect(radioClientCount({ name: 'wlan2', 'mac-address': 'D4:CA:6D:BB:0E:58' }, 2, peers)).toBe(2);
+    expect(radioClientCount({ name: 'wlan3' }, 0, peers)).toBe(0);
+  });
+
+  it('leaves a virtual AP alone', () => {
+    expect(radioClientCount({ name: 'wlan1-guest', 'mac-address': 'D4:CA:6D:BB:0E:57', 'master-interface': 'wlan1' }, 1, peers)).toBe(1);
   });
 });
