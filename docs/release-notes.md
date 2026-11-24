@@ -7,6 +7,16 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.34
+
+Released on Tuesday 24 November 2026. A fix for CAPsMAN.
+
+- **A CAP's Connected Clients chart counts its clients.** On a CAP of the legacy CAPsMAN, the
+  chart on the device's **Radios** tab read 0 all the time: the CAP's own registration table is
+  empty, since its clients are listed on the controller. It now takes the controller's count for
+  that radio when it's the higher one. Thanks to [@ronchan44](https://github.com/ronchan44) (Ron)
+  for the report ([#504](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/504)).
+
 ## 1.0.33
 
 Released on Monday 23 November 2026. A label fix for Traffic.
