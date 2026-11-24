@@ -268,6 +268,10 @@ beta, sent a fix or reported a problem:
 - [@schmitt330](https://github.com/schmitt330): device tools on RouterOS 6.
 - [@orshih6](https://github.com/orshih6): a security report on the release workflow.
 
+## 1.1.0-rc.6
+
+The fix in 1.0.34 below.
+
 ## 1.1.0-rc.5
 
 The fix in 1.0.33 below, and dependency updates: nodemailer 10.6.1, openid-client 6.9.0,
@@ -1486,6 +1490,16 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.34
+
+Released on Tuesday 24 November 2026. A fix for CAPsMAN.
+
+- **A CAP's Connected Clients chart counts its clients.** On a CAP of the legacy CAPsMAN, the
+  chart on the device's **Radios** tab read 0 all the time: the CAP's own registration table is
+  empty, since its clients are listed on the controller. It now takes the controller's count for
+  that radio when it's the higher one. Thanks to [@ronchan44](https://github.com/ronchan44) (Ron)
+  for the report ([#504](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/504)).
 
 ## 1.0.33
 
