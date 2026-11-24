@@ -268,6 +268,12 @@ beta, sent a fix or reported a problem:
 - [@schmitt330](https://github.com/schmitt330): device tools on RouterOS 6.
 - [@orshih6](https://github.com/orshih6): a security report on the release workflow.
 
+## 1.1.0-rc.5
+
+The fix in 1.0.33 below, and dependency updates: nodemailer 10.6.1, openid-client 6.9.0,
+cron-parser 5.10.6, bullmq 6.7.8, recharts 3.11.0, @tanstack/react-query 5.108.1,
+tailwind-merge 3.7.1, and CodeQL 4.39.4 for the security scans.
+
 ## 1.1.0-rc.4
 
 The fix in 1.0.32 below.
@@ -1480,6 +1486,17 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.33
+
+Released on Monday 23 November 2026. A label fix for Traffic.
+
+- **Traffic's data health labels say what they count.** **Attribution rate** counted packets from
+  a device MTM recognised as the exporter, not packets matched to a client, so it could read 100%
+  while **Unattributed (local)** was large. It's now **From known exporters**, and **Flows
+  attributed** is now **Flows counted**, since it includes flows in Unattributed (local). Thanks to
+  [@godlessmind](https://github.com/godlessmind) for the screenshots
+  ([Discussion #486](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/486)).
 
 ## 1.0.32
 
