@@ -410,6 +410,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.6
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc5" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2509,6 +2520,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.6
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc5" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3659,6 +3681,8 @@ beta, sent a fix or reported a problem:</p>
 <li><a href="https://github.com/schmitt330">@schmitt330</a>: device tools on RouterOS 6.</li>
 <li><a href="https://github.com/orshih6">@orshih6</a>: a security report on the release workflow.</li>
 </ul>
+<h2 id="110-rc6">1.1.0-rc.6<a class="headerlink" href="#110-rc6" title="Permanent link">&para;</a></h2>
+<p>The fix in 1.0.34 below.</p>
 <h2 id="110-rc5">1.1.0-rc.5<a class="headerlink" href="#110-rc5" title="Permanent link">&para;</a></h2>
 <p>The fix in 1.0.33 below, and dependency updates: nodemailer 10.6.1, openid-client 6.9.0,
 cron-parser 5.10.6, bullmq 6.7.8, recharts 3.11.0, @tanstack/react-query 5.108.1,
@@ -4829,6 +4853,15 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1034">1.0.34<a class="headerlink" href="#1034" title="Permanent link">&para;</a></h2>
+<p>Released on Tuesday 24 November 2026. A fix for CAPsMAN.</p>
+<ul>
+<li><strong>A CAP's Connected Clients chart counts its clients.</strong> On a CAP of the legacy CAPsMAN, the
+  chart on the device's <strong>Radios</strong> tab read 0 all the time: the CAP's own registration table is
+  empty, since its clients are listed on the controller. It now takes the controller's count for
+  that radio when it's the higher one. Thanks to <a href="https://github.com/ronchan44">@ronchan44</a> (Ron)
+  for the report (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/504">#504</a>).</li>
+</ul>
 <h2 id="1033">1.0.33<a class="headerlink" href="#1033" title="Permanent link">&para;</a></h2>
 <p>Released on Monday 23 November 2026. A label fix for Traffic.</p>
 <ul>
