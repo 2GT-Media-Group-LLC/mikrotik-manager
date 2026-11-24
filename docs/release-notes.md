@@ -7,6 +7,17 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.33
+
+Released on Monday 23 November 2026. A label fix for Traffic.
+
+- **Traffic's data health labels say what they count.** **Attribution rate** counted packets from
+  a device MTM recognised as the exporter, not packets matched to a client, so it could read 100%
+  while **Unattributed (local)** was large. It's now **From known exporters**, and **Flows
+  attributed** is now **Flows counted**, since it includes flows in Unattributed (local). Thanks to
+  [@godlessmind](https://github.com/godlessmind) for the screenshots
+  ([Discussion #486](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/486)).
+
 ## 1.0.32
 
 Released on Sunday 22 November 2026. A fix for Traffic.
