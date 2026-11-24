@@ -27,6 +27,7 @@ import {
   normalizeRadios, macIndexKeys, parseRadioMonitor, resolveDatapath,
   clientsPerRadio, buildMacIndex, matchRadiosToDevices, lookupDeviceForMac,
   legacyManagerEnabled, legacyCapInterfaces, legacyRadios, hasRadios, chooseWifiPackage,
+  radioClientCount,
   type WifiRole,
 } from './capsman';
 
@@ -3158,11 +3159,13 @@ export class DeviceCollector {
         }
       }
 
+      const controllerPeers = await this.controllerRadioPeers(wlans);
+
       const writeApi = getWriteApi();
       for (const wlan of wlans) {
         const name = wlan['name'];
         if (!name || wlan['disabled'] === 'true') continue;
-        const clientCount = clientsByIface[name] || 0;
+        const clientCount = radioClientCount(wlan, clientsByIface[name] || 0, controllerPeers);
         const noiseFloor  = parseInt(wlan['noise-floor'] || '0', 10);
 
         const point = new Point('wireless_stats')
@@ -3205,6 +3208,26 @@ export class DeviceCollector {
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect wireless stats:`, err);
     }
+  }
+
+  /**
+   * Clients per radio as a CAPsMAN controller counted them on its last poll,
+   * by radio MAC (#504). Counts older than 15 minutes are left out, so a
+   * controller that stopped polling doesn't hold a CAP's figure up.
+   */
+  private async controllerRadioPeers(wlans: Record<string, string>[]): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    const macs = wlans.map((w) => (w['mac-address'] || '').toUpperCase()).filter(Boolean);
+    if (macs.length === 0) return out;
+    const rows = await query<{ radio_mac: string; registered_peers: number }>(
+      `SELECT DISTINCT ON (radio_mac) radio_mac, registered_peers FROM capsman_radios
+        WHERE radio_mac = ANY($1::text[]) AND registered_peers IS NOT NULL
+          AND updated_at > NOW() - INTERVAL '15 minutes'
+        ORDER BY radio_mac, updated_at DESC`,
+      [macs]
+    ).catch(() => []);
+    for (const r of rows) out.set(r.radio_mac, Number(r.registered_peers));
+    return out;
   }
 
   /** Remove stored security profiles that no longer exist on the device. */
