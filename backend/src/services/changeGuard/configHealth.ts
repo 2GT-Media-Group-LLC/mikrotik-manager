@@ -562,8 +562,8 @@ function interfaceListMembership(
 
 /** VRF entries are matched in order, including the default main interfaces=all. */
 function addressInterfaceVrf(snap: DeviceSnapshot, iface: string): string | null {
-  if (snap.vrfsRead === false || iface === '?') return null;
-  for (const vrf of snap.vrfs ?? []) {
+  if ((snap.vrfsRead === false && snap.v6Vrfs === undefined) || iface === '?') return null;
+  for (const vrf of snap.v6Vrfs ?? snap.vrfs ?? []) {
     if (isTrue(vrf['disabled']) || isTrue(vrf['invalid'])) continue;
     const members = rosList(vrf['interfaces']).map((name): Membership => {
       if (name === iface) return 'yes';
@@ -573,7 +573,7 @@ function addressInterfaceVrf(snap: DeviceSnapshot, iface: string): string | null
       }
       return 'no';
     });
-    if (members.includes('yes')) return vrf['name']?.trim() || null;
+    if (members.includes('yes')) return (vrf['name'] || vrf['routing-mark'])?.trim() || null;
     if (members.includes('unknown')) return null;
   }
   return 'main';
