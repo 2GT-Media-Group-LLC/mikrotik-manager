@@ -77,7 +77,7 @@ import { webAdminUrl } from '../utils/webAdminUrl';
 import { vlanInterfacesView } from '../utils/vlanInterfaces';
 import { ipv6RoutesView } from '../utils/ipv6Routes';
 import { switchVlanEntry, switchPortVlan, validPortName } from '../utils/switchVlanEdit';
-import { ipAddressEdit } from '../utils/ipAddressEdit';
+import { ipAddressEdit, hostAddressProblem } from '../utils/ipAddressEdit';
 import { parseBgpConnection } from '../utils/bgpConnection';
 import { parseBridgeCreate, parseBridgeUpdate } from '../utils/bridgeEdit';
 import { tracerouteHops } from '../utils/traceroute';
@@ -2368,6 +2368,8 @@ router.post('/:id/ip-addresses', requireWrite, async (req: Request, res: Respons
   if (!address || !iface) {
     return res.status(400).json({ error: 'address and interface are required' });
   }
+  const notHost = hostAddressProblem(String(address));
+  if (notHost) return res.status(400).json({ error: notHost });
 
   await withGuardedChange(
     req.params.id,
