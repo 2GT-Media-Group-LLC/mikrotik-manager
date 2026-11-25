@@ -275,7 +275,7 @@ function WirelessCharts({ deviceId, ifaces }: { deviceId: number; ifaces: Wirele
               <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
               <Tooltip
                 {...chartTooltip}
-                formatter={(v: number) => [v, 'Clients']}
+                formatter={(v: number) => [Math.round(v), 'Clients']}
               />
               <Line type="monotone" dataKey="clients" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 3 }} />
             </LineChart>
