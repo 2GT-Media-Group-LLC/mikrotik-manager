@@ -2440,6 +2440,8 @@ Close it to go back to the form.</p>
 - <strong>Ports:</strong> the port editor (link settings and VLAN role).
 - <strong>IP addresses and routes:</strong> adding, and editing an address in place. A network or broadcast
   address (192.168.33.0/24, 192.168.33.255/24) is refused, with a host address suggested.
+  So is a route whose destination isn't an IPv4 address or prefix (10.100.32.256/24), or whose
+  gateway reads as an address but isn't one.
 - <strong>Routing:</strong> routing rules, OSPF instances and areas, BGP connections, route filters, routing tables.
 - <strong>Firewall:</strong> filter and NAT rules, and address lists.
 - <strong>Bandwidth queues.</strong>

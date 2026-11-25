@@ -410,6 +410,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.8
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc7" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2531,6 +2542,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.8
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc7" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3703,6 +3725,8 @@ beta, sent a fix or reported a problem:</p>
 <li><a href="https://github.com/schmitt330">@schmitt330</a>: device tools on RouterOS 6.</li>
 <li><a href="https://github.com/orshih6">@orshih6</a>: a security report on the release workflow.</li>
 </ul>
+<h2 id="110-rc8">1.1.0-rc.8<a class="headerlink" href="#110-rc8" title="Permanent link">&para;</a></h2>
+<p>The fix in 1.0.36 below.</p>
 <h2 id="110-rc7">1.1.0-rc.7<a class="headerlink" href="#110-rc7" title="Permanent link">&para;</a></h2>
 <p>The fixes in 1.0.35 below. On 1.1 the address check also covers the <strong>Bridges</strong> tab.</p>
 <h2 id="110-rc6">1.1.0-rc.6<a class="headerlink" href="#110-rc6" title="Permanent link">&para;</a></h2>
@@ -4877,6 +4901,17 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1036">1.0.36<a class="headerlink" href="#1036" title="Permanent link">&para;</a></h2>
+<p>Released on Wednesday 25 November 2026. A fix for static routes.</p>
+<ul>
+<li><strong>A route with an invalid destination is refused before you add it.</strong> The <strong>Routing</strong> tab
+  took a destination such as 10.100.32.256/24, Review changes didn't flag it, and only the
+  router refused it at apply. The form now says why and holds <strong>Add Route</strong> and <strong>Review
+  changes</strong> until it's fixed, and the server refuses the same. A gateway that reads as an
+  address but isn't one (192.168.1.256) is refused too. Thanks to
+  <a href="https://github.com/ronchan44">@ronchan44</a> (Ron) for the report
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/505">#505</a>).</li>
+</ul>
 <h2 id="1035">1.0.35<a class="headerlink" href="#1035" title="Permanent link">&para;</a></h2>
 <p>Released on Tuesday 24 November 2026. Two fixes from Ron's reports.</p>
 <ul>
