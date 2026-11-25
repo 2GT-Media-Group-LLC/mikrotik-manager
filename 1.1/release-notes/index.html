@@ -410,6 +410,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.7
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc6" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2520,6 +2531,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.7
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc6" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3681,6 +3703,8 @@ beta, sent a fix or reported a problem:</p>
 <li><a href="https://github.com/schmitt330">@schmitt330</a>: device tools on RouterOS 6.</li>
 <li><a href="https://github.com/orshih6">@orshih6</a>: a security report on the release workflow.</li>
 </ul>
+<h2 id="110-rc7">1.1.0-rc.7<a class="headerlink" href="#110-rc7" title="Permanent link">&para;</a></h2>
+<p>The fixes in 1.0.35 below. On 1.1 the address check also covers the <strong>Bridges</strong> tab.</p>
 <h2 id="110-rc6">1.1.0-rc.6<a class="headerlink" href="#110-rc6" title="Permanent link">&para;</a></h2>
 <p>The fix in 1.0.34 below.</p>
 <h2 id="110-rc5">1.1.0-rc.5<a class="headerlink" href="#110-rc5" title="Permanent link">&para;</a></h2>
@@ -4853,6 +4877,18 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1035">1.0.35<a class="headerlink" href="#1035" title="Permanent link">&para;</a></h2>
+<p>Released on Tuesday 24 November 2026. Two fixes from Ron's reports.</p>
+<ul>
+<li><strong>Editing an IP address has Review changes.</strong> Changing an address in place on the device's
+  <strong>Config</strong> tab now has a <strong>Review changes</strong> button, as adding one does, so you see what the
+  change does before you save it. An address that is the network or broadcast address of its
+  prefix, such as 192.168.33.0/24 or 192.168.33.255/24, is refused, with a host address
+  suggested. Thanks to <a href="https://github.com/ronchan44">@ronchan44</a> (Ron) for the report
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/505">#505</a>).</li>
+<li><strong>The Connected Clients tooltip shows whole clients.</strong> It read 3.8 when the chart averaged
+  samples; it now rounds to 4 (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/504">#504</a>).</li>
+</ul>
 <h2 id="1034">1.0.34<a class="headerlink" href="#1034" title="Permanent link">&para;</a></h2>
 <p>Released on Tuesday 24 November 2026. A fix for CAPsMAN.</p>
 <ul>
