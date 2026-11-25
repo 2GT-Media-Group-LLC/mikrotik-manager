@@ -94,6 +94,7 @@ import { firewallFamily, managedOverIpv4, type FirewallFamily } from '../utils/f
 import { ipv6RoutesView } from '../utils/ipv6Routes';
 import { switchVlanEntry, switchPortVlan, validPortName } from '../utils/switchVlanEdit';
 import { ipAddressEdit, hostAddressProblem } from '../utils/ipAddressEdit';
+import { routeInputProblem } from '../utils/routeInput';
 import { parseBgpConnection } from '../utils/bgpConnection';
 import { parseBridgeCreate, parseBridgeUpdate, parseBridgePortUpdate, bridgeMtuProblem } from '../utils/bridgeEdit';
 import { parseDot1xServer, parseDot1xClient, parseRadius } from '../utils/dot1xEdit';
@@ -3513,6 +3514,8 @@ router.post('/:id/routing', requireWrite, async (req, res) => {
   if (!dst_address || !gateway) {
     return res.status(400).json({ error: 'dst_address and gateway are required' });
   }
+  const routeProblem = routeInputProblem(String(dst_address), String(gateway));
+  if (routeProblem) return res.status(400).json({ error: routeProblem });
   if (req.body.routing_table !== undefined && req.body.routing_table !== null && typeof req.body.routing_table !== 'string') {
     return res.status(400).json({ error: 'routing_table must be a string' });
   }

@@ -7,6 +7,7 @@ import { devicesApi } from '../../services/api';
 import clsx from 'clsx';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import RoutingRulesSubTab from './RoutingRulesSubTab';
+import { routeInputProblem } from '../../utils/ipPrefix';
 
 // ─── Extended devicesApi type (routing protocol methods added at runtime) ──────
 const dApi = devicesApi as typeof devicesApi & {
@@ -97,6 +98,7 @@ function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?:
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ dst_address: '', gateway: '', distance: '1', comment: '', routing_table: '' });
   const [addError, setAddError] = useState('');
+  const routeProblem = form.dst_address.trim() ? routeInputProblem(form.dst_address, form.gateway) : null;
   const [deleteError, setDeleteError] = useState('');
   // 409 + verdict from the lockout predictor, with the retry that confirms it.
   const [lockout, setLockout] = useState<{ verdict: LockoutVerdict; retry: () => void } | null>(null);
@@ -205,13 +207,13 @@ function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?:
             <div><label className="label">Comment</label>
               <input className="input" value={form.comment} onChange={e => setForm(f => ({ ...f, comment: e.target.value }))} placeholder="Optional" /></div>
           </div>
-          {addError && <div className="flex items-center gap-2 text-sm text-red-500"><AlertCircle className="w-4 h-4" />{addError}</div>}
+          {(routeProblem || addError) && <div className="flex items-center gap-2 text-sm text-red-500"><AlertCircle className="w-4 h-4 shrink-0" />{routeProblem || addError}</div>}
           <div className="flex gap-2">
-            <button onClick={() => addMutation.mutate(false)} disabled={!form.dst_address || !form.gateway || addMutation.isPending} className="btn-primary flex items-center gap-2 text-sm">
+            <button onClick={() => addMutation.mutate(false)} disabled={!form.dst_address || !form.gateway || !!routeProblem || addMutation.isPending} className="btn-primary flex items-center gap-2 text-sm">
               {addMutation.isPending && <RefreshCw className="w-3.5 h-3.5 animate-spin" />} Add Route
             </button>
             <ReviewChangesButton request={() => addRequest(false)} onApply={() => addMutation.mutate(false)} applyLabel="Add Route"
-              deviceName={deviceName} disabled={!form.dst_address || !form.gateway || addMutation.isPending} />
+              deviceName={deviceName} disabled={!form.dst_address || !form.gateway || !!routeProblem || addMutation.isPending} />
             <button onClick={() => setShowAdd(false)} className="btn-secondary text-sm">Cancel</button>
           </div>
         </div>

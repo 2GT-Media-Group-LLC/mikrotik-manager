@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isIpOrPrefix, splitList, hostAddressProblem } from './ipPrefix';
+import { isIpOrPrefix, splitList, hostAddressProblem, routeInputProblem } from './ipPrefix';
 
 describe('isIpOrPrefix / splitList (#207)', () => {
   it('accepts addresses and prefixes', () => {
@@ -24,5 +24,21 @@ describe('hostAddressProblem (#505)', () => {
     expect(hostAddressProblem('10.0.0.0/32')).toBeNull();
     expect(hostAddressProblem('10.0.0.0')).toBeNull();
     expect(hostAddressProblem('192.168.1.')).toBeNull();
+  });
+});
+
+describe('routeInputProblem (#505)', () => {
+  it('accepts networks, hosts, the default route and interface gateways', () => {
+    expect(routeInputProblem('10.100.32.0/24', '192.168.1.1')).toBeNull();
+    expect(routeInputProblem('0.0.0.0/0', 'ether1')).toBeNull();
+    expect(routeInputProblem('10.1.2.3', '10.0.0.1%ether2')).toBeNull();
+    expect(routeInputProblem('10.1.2.3/24', '')).toBeNull();
+  });
+
+  it('refuses a bad destination or an address-like gateway that is not one', () => {
+    expect(routeInputProblem('10.100.32.256/24', '192.168.1.1')).toMatch(/not a valid destination/);
+    expect(routeInputProblem('10.100.32.0/33', '192.168.1.1')).not.toBeNull();
+    expect(routeInputProblem('10.100.32/24', '192.168.1.1')).not.toBeNull();
+    expect(routeInputProblem('0.0.0.0/0', '192.168.1.256')).toMatch(/not a valid gateway/);
   });
 });
