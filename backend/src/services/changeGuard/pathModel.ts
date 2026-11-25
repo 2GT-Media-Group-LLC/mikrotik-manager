@@ -67,6 +67,8 @@ export interface DeviceSnapshot {
   switches?: RosRow[];
   /** /ip/vrf: VRF name (its routing table) and the interfaces placed in it. */
   vrfs?: RosRow[];
+  /** RouterOS 6 /ip/route/vrf rows, for the configuration audit. */
+  v6Vrfs?: RosRow[];
   /** False when /ip/vrf could not be read, so a VRF-bound path can't be confirmed. */
   vrfsRead?: boolean;
 }
@@ -166,7 +168,7 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
     const [
       addresses, interfaces, vlanInterfaces, bridges, bridgePorts,
       bridgeVlans, bonds, arp, bridgeHosts, services, firewallFilter,
-      interfaceLists, interfaceListMembers, deviceModeRows, switches,
+      interfaceLists, interfaceListMembers, deviceModeRows, switches, resourceRows,
     ] = await Promise.all([
       run('/ip/address/print', { detail: '' }),
       run('/interface/print', { detail: '' }),
@@ -183,12 +185,20 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
       run('/interface/list/member/print'),
       optional('/system/device-mode/print'),
       optional('/interface/ethernet/switch/print'),
+      optional('/system/resource/print'),
     ]);
-    // Absent on builds without VRF support; a failed read is recorded so a
-    // service bound to a VRF is then reported as unconfirmed rather than assumed.
     let vrfs: RosRow[] = [];
-    let vrfsRead = true;
-    try { vrfs = await client.execute('/ip/vrf/print', { detail: '' }); } catch { vrfsRead = false; }
+    let v6Vrfs: RosRow[] | undefined;
+    let vrfsRead = false;
+    if (/^6\./.test(resourceRows[0]?.['version'] || '')) {
+      try { v6Vrfs = await client.execute('/ip/route/vrf/print', { detail: '' }); }
+      catch { /* An unread legacy VRF table remains unknown to the audit. */ }
+    } else {
+      try {
+        vrfs = await client.execute('/ip/vrf/print', { detail: '' });
+        vrfsRead = true;
+      } catch { /* An unread VRF table remains unknown to the audit. */ }
+    }
 
     // Only the manager's connection, and only the routes that could carry
     // traffic back to it, never the whole tables: a BGP router has hundreds of
@@ -227,6 +237,7 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
       deviceMode: deviceModeRows[0] ?? null,
       switches,
       vrfs,
+      v6Vrfs,
       vrfsRead,
     };
   } finally {
