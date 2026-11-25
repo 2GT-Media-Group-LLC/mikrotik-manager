@@ -268,6 +268,10 @@ beta, sent a fix or reported a problem:
 - [@schmitt330](https://github.com/schmitt330): device tools on RouterOS 6.
 - [@orshih6](https://github.com/orshih6): a security report on the release workflow.
 
+## 1.1.0-rc.8
+
+The fix in 1.0.36 below.
+
 ## 1.1.0-rc.7
 
 The fixes in 1.0.35 below. On 1.1 the address check also covers the **Bridges** tab.
@@ -1494,6 +1498,18 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.36
+
+Released on Wednesday 25 November 2026. A fix for static routes.
+
+- **A route with an invalid destination is refused before you add it.** The **Routing** tab
+  took a destination such as 10.100.32.256/24, Review changes didn't flag it, and only the
+  router refused it at apply. The form now says why and holds **Add Route** and **Review
+  changes** until it's fixed, and the server refuses the same. A gateway that reads as an
+  address but isn't one (192.168.1.256) is refused too. Thanks to
+  [@ronchan44](https://github.com/ronchan44) (Ron) for the report
+  ([#505](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/505)).
 
 ## 1.0.35
 
