@@ -395,31 +395,52 @@ describe('auditConfig', () => {
     const findings = (snap: DeviceSnapshot) =>
       auditConfig(snap, device).filter((f) => f.rule.startsWith('duplicate-address'));
 
-    it('excludes /32 addresses even when mixed with other prefixes', () => {
+    it('excludes /32 addresses with a different network even when mixed with other prefixes', () => {
       const snap = healthy({
         addresses: [
-          ...duplicates(['ether9'], '10.0.0.1/32'),
+          { address: '10.0.0.1/32', network: '10.0.0.2', interface: 'ether9' },
           ...duplicates(['ether10'], '10.0.0.1/24'),
-          ...duplicates(['ether11', 'ether12'], '10.0.0.2/32'),
+          { address: '10.0.0.2/32', network: '10.0.0.3', interface: 'ether11' },
+          { address: '10.0.0.2/32', network: '10.0.0.4', interface: 'ether12' },
         ],
       });
       expect(findings(snap)).toEqual([]);
     });
 
-    it('treats addresses without a prefix as /32, including when mixed with other prefixes', () => {
+    it('excludes prefixless addresses with a different network, but keeps other prefixes', () => {
       const snap = healthy({
         addresses: [
-          ...duplicates(['ether1', 'ether2'], '10.0.0.1'),
-          ...duplicates(['ether3'], '10.0.0.2'),
+          { address: '10.0.0.1', network: '10.0.0.2', interface: 'ether1' },
+          { address: '10.0.0.1', network: '10.0.0.3', interface: 'ether2' },
+          { address: '10.0.0.2', network: '10.0.0.3', interface: 'ether3' },
           ...duplicates(['ether4'], '10.0.0.2/24'),
-          ...duplicates(['ether5'], '10.0.0.3'),
-          ...duplicates(['ether6'], '10.0.0.3/32'),
-          ...duplicates(['ether7', 'ether8'], '10.0.0.4/31'),
+          { address: '10.0.0.3', network: '10.0.0.4', interface: 'ether5' },
+          { address: '10.0.0.3/32', network: '10.0.0.4', interface: 'ether6' },
+          { address: '10.0.0.4/31', network: '10.0.0.5', interface: 'ether7' },
+          { address: '10.0.0.4/31', network: '10.0.0.5', interface: 'ether8' },
         ],
       });
       expect(findings(snap)).toEqual([expect.objectContaining({
         rule: 'duplicate-address', objects: ['10.0.0.4', 'ether7', 'ether8'],
       })]);
+    });
+
+    it('checks /32 and prefixless addresses when the network equals the address or is missing', () => {
+      const snap = healthy({
+        addresses: [
+          { address: '10.0.0.1/32', network: '10.0.0.1', interface: 'ether1' },
+          { address: '10.0.0.1', network: '10.0.0.1', interface: 'ether2' },
+          { address: '10.0.0.1/32', interface: 'ether3' },
+          { address: '10.0.0.1', network: '', interface: 'ether4' },
+          { address: '10.0.0.1/32', network: '10.0.0.2', interface: 'ether5' },
+          { address: '10.0.0.2', interface: 'ether6' },
+          { address: '10.0.0.2/24', interface: 'ether7' },
+        ],
+      });
+      expect(findings(snap).map((f) => f.objects)).toEqual([
+        ['10.0.0.1', 'ether1', 'ether2', 'ether3', 'ether4'],
+        ['10.0.0.2', 'ether6', 'ether7'],
+      ]);
     });
 
     it('groups direct VRF members separately and preserves main fingerprints', () => {

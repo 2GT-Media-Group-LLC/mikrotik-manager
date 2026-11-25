@@ -579,15 +579,16 @@ function addressInterfaceVrf(snap: DeviceSnapshot, iface: string): string | null
   return 'main';
 }
 
-/** Duplicate non-host addresses conflict only within the same VRF. */
+/** Duplicate addresses conflict only within the same VRF, except point-to-point hosts. */
 function ruleDuplicateAddress(snap: DeviceSnapshot): ConfigFinding[] {
   const byAddr = new Map<string, Map<string | null, string[]>>();
   for (const a of snap.addresses) {
     if (isTrue(a['disabled']) || isTrue(a['invalid'])) continue;
     const address = (a['address'] || '').trim();
-    if (!address.includes('/') || /\/32\s*$/.test(address)) continue;
-    const ip = stripCidr(a['address']);
+    const ip = stripCidr(address);
     if (!ip) continue;
+    const network = (a['network'] || '').trim();
+    if ((!address.includes('/') || /\/32\s*$/.test(address)) && network && network !== ip) continue;
     const iface = a['actual-interface'] || a['interface'] || '?';
     const vrf = addressInterfaceVrf(snap, iface);
     const groups = byAddr.get(ip) ?? new Map<string | null, string[]>();
