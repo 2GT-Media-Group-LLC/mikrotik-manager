@@ -45,7 +45,7 @@ applied; the rest are protected by auto-revert alone.
 | Ports | enable/disable | Yes |
 | Ports | MTU, FEC, flow control, speed, PoE | Flagged when the port carries management |
 | Bridge VLANs | add, update, delete, copy from another switch | Yes |
-| Addressing | IP address add, remove | Yes |
+| Addressing | IP address add, edit, remove | Yes |
 | VLAN interfaces | add, edit, enable/disable, remove | Yes; an MTU change is flagged when the interface carries management |
 | Routing | static route add, remove | Yes |
 | Routing | routing rules, OSPF, BGP, routing tables, route filters | No |
@@ -362,7 +362,8 @@ Close it to go back to the form.
 The review is available on:
 - **VLANs:** add and edit.
 - **Ports:** the port editor (link settings and VLAN role).
-- **IP addresses and routes.**
+- **IP addresses and routes:** adding, and editing an address in place. A network or broadcast
+  address (192.168.33.0/24, 192.168.33.255/24) is refused, with a host address suggested.
 - **Routing:** routing rules, OSPF instances and areas, BGP connections, route filters, routing tables.
 - **Firewall:** filter and NAT rules, and address lists.
 - **Bandwidth queues.**

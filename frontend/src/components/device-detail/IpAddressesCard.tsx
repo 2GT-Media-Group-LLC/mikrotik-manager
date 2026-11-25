@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Plus, Trash2, AlertCircle, Pencil, Check, X } from 'lucide-react';
 import clsx from 'clsx';
 import ReviewChangesButton from '../common/ReviewChangesButton';
+import { hostAddressProblem } from '../../utils/ipPrefix';
 import { devicesApi } from '../../services/api';
 import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
 import type { IpAddress, Interface } from '../../types';
@@ -149,6 +150,9 @@ export default function IpAddressesCard({ deviceId, deviceName, iface, onChanged
                   <td className="px-4 py-2" colSpan={2}>
                     <input className="input font-mono py-1 text-sm" value={editingIp.address} aria-label="Address / prefix"
                       onChange={(e) => setEditingIp((x) => x && { ...x, address: e.target.value })} />
+                    {hostAddressProblem(editingIp.address) && (
+                      <p className="mt-1 text-xs text-red-500">{hostAddressProblem(editingIp.address)}</p>
+                    )}
                   </td>
                   <td className="px-4 py-2">
                     <select className="input py-1 text-sm" value={editingIp.interface} aria-label="Interface"
@@ -171,10 +175,14 @@ export default function IpAddressesCard({ deviceId, deviceName, iface, onChanged
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => updateIpMutation.mutate({ e: editingIp })}
-                        disabled={updateIpMutation.isPending || Object.keys(ipEdits(editingIp)).length === 0}
+                        disabled={updateIpMutation.isPending || Object.keys(ipEdits(editingIp)).length === 0 || !!hostAddressProblem(editingIp.address)}
                         className="p-1 rounded text-green-600 hover:text-green-700 disabled:opacity-40" title="Save">
                         {updateIpMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                       </button>
+                      <ReviewChangesButton className="py-1 px-2 text-xs whitespace-nowrap"
+                        request={() => devicesApi.updateIpAddress(deviceId, editingIp.id, ipEdits(editingIp), false)}
+                        onApply={() => updateIpMutation.mutate({ e: editingIp })} applyLabel="Save" deviceName={deviceName}
+                        disabled={updateIpMutation.isPending || Object.keys(ipEdits(editingIp)).length === 0 || !!hostAddressProblem(editingIp.address)} />
                       <button onClick={() => { setEditingIp(null); setIpError(''); }} className="p-1 rounded text-gray-400 hover:text-gray-600" title="Cancel">
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -256,18 +264,18 @@ export default function IpAddressesCard({ deviceId, deviceName, iface, onChanged
             )}
             <button
               onClick={() => addIpMutation.mutate(false)}
-              disabled={!newIp.address || !newIp.interface || addIpMutation.isPending}
+              disabled={!newIp.address || !newIp.interface || addIpMutation.isPending || !!hostAddressProblem(newIp.address)}
               className="btn-primary flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
               Add
             </button>
             <ReviewChangesButton request={() => addIpRequest(false)} onApply={() => addIpMutation.mutate(false)} applyLabel="Add"
-              deviceName={deviceName} disabled={!newIp.address || !newIp.interface || addIpMutation.isPending} />
+              deviceName={deviceName} disabled={!newIp.address || !newIp.interface || addIpMutation.isPending || !!hostAddressProblem(newIp.address)} />
           </div>
-          {ipError && (
+          {(hostAddressProblem(newIp.address) || ipError) && (
             <div className="flex items-center gap-2 mt-2 text-sm text-red-500">
-              <AlertCircle className="w-4 h-4" /> {ipError}
+              <AlertCircle className="w-4 h-4" /> {hostAddressProblem(newIp.address) || ipError}
             </div>
           )}
         </div>}

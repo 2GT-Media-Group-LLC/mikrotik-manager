@@ -93,7 +93,7 @@ import { vlanInterfaceEntry } from '../utils/vlanInterfaceEdit';
 import { firewallFamily, managedOverIpv4, type FirewallFamily } from '../utils/firewallFamily';
 import { ipv6RoutesView } from '../utils/ipv6Routes';
 import { switchVlanEntry, switchPortVlan, validPortName } from '../utils/switchVlanEdit';
-import { ipAddressEdit } from '../utils/ipAddressEdit';
+import { ipAddressEdit, hostAddressProblem } from '../utils/ipAddressEdit';
 import { parseBgpConnection } from '../utils/bgpConnection';
 import { parseBridgeCreate, parseBridgeUpdate, parseBridgePortUpdate, bridgeMtuProblem } from '../utils/bridgeEdit';
 import { parseDot1xServer, parseDot1xClient, parseRadius } from '../utils/dot1xEdit';
@@ -3029,6 +3029,8 @@ router.post('/:id/ip-addresses', requireWrite, async (req, res) => {
   if (!address || !iface) {
     return res.status(400).json({ error: 'address and interface are required' });
   }
+  const notHost = hostAddressProblem(String(address));
+  if (notHost) return res.status(400).json({ error: notHost });
 
   await withGuardedChange(
     req.params.id,
