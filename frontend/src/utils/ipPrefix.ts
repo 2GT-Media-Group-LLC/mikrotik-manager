@@ -41,3 +41,20 @@ export function hostAddressProblem(address: string): string | null {
   }
   return null;
 }
+
+/**
+ * Why a static route's destination or gateway can't be added, or null (#505:
+ * 10.100.32.256/24 reached the router). The server refuses the same.
+ */
+export function routeInputProblem(dstAddress: string, gateway: string): string | null {
+  const dst = dstAddress.trim();
+  const [ip, len, ...rest] = dst.split('/');
+  if (rest.length || !isValidIPv4(ip) || (len !== undefined && !(/^\d{1,2}$/.test(len) && Number(len) <= 32))) {
+    return `${dst} is not a valid destination. Use an IPv4 network with a prefix length, such as 10.100.32.0/24, or 0.0.0.0/0 for the default route.`;
+  }
+  const gw = gateway.trim().split('%')[0];
+  if (/^[\d.]+$/.test(gw) && !isValidIPv4(gw)) {
+    return `${gateway.trim()} is not a valid gateway address.`;
+  }
+  return null;
+}
