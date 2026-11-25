@@ -268,6 +268,10 @@ beta, sent a fix or reported a problem:
 - [@schmitt330](https://github.com/schmitt330): device tools on RouterOS 6.
 - [@orshih6](https://github.com/orshih6): a security report on the release workflow.
 
+## 1.1.0-rc.7
+
+The fixes in 1.0.35 below. On 1.1 the address check also covers the **Bridges** tab.
+
 ## 1.1.0-rc.6
 
 The fix in 1.0.34 below.
@@ -1490,6 +1494,19 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.35
+
+Released on Tuesday 24 November 2026. Two fixes from Ron's reports.
+
+- **Editing an IP address has Review changes.** Changing an address in place on the device's
+  **Config** tab now has a **Review changes** button, as adding one does, so you see what the
+  change does before you save it. An address that is the network or broadcast address of its
+  prefix, such as 192.168.33.0/24 or 192.168.33.255/24, is refused, with a host address
+  suggested. Thanks to [@ronchan44](https://github.com/ronchan44) (Ron) for the report
+  ([#505](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/505)).
+- **The Connected Clients tooltip shows whole clients.** It read 3.8 when the chart averaged
+  samples; it now rounds to 4 ([#504](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/504)).
 
 ## 1.0.34
 
