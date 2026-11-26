@@ -1,5 +1,5 @@
 import {
-  resolveStpUpstreams, upstreamByDevice, type StpBridge, type StpLink,
+  resolveStpUpstreams, upstreamByDevice, portMonitorDesignated, type StpBridge, type StpLink,
 } from '../stpUpstream';
 
 /**
@@ -313,5 +313,32 @@ describe('a designated bridge id that repeats across the fleet (#365)', () => {
   it('without sites, a single match is taken as before', () => {
     const bs = [B(HQ_RTR, null), below(HQ_SW02, null, 'ether14')];
     expect(of(resolveStpUpstreams(bs, []), HQ_SW02)).toMatchObject({ confidence: 'resolved', upstreamDeviceId: HQ_RTR });
+  });
+});
+
+describe('portMonitorDesignated (D507)', () => {
+  it('reads the RouterOS 7 field names', () => {
+    expect(portMonitorDesignated({ 'designated-bridge-id': '0x8000.D0:EA:11:2C:00:01', 'designated-port-id': '0x80.7' }))
+      .toEqual({ bridgeId: '0x8000.D0:EA:11:2C:00:01', portId: '0x80.7' });
+  });
+
+  it('reads the RouterOS 6 field names', () => {
+    expect(portMonitorDesignated({ role: 'root-port', 'designated-bridge': '0x8000.D0:EA:11:2C:00:01', 'designated-port-number': '7' }))
+      .toEqual({ bridgeId: '0x8000.D0:EA:11:2C:00:01', portId: '7' });
+  });
+
+  it('gives null when the port monitor has neither', () => {
+    expect(portMonitorDesignated({})).toEqual({ bridgeId: null, portId: null });
+  });
+
+  it('lets a v6 SXT resolve to the v7 switch it hangs off', () => {
+    const d = portMonitorDesignated({ 'designated-bridge': '0x8000.D0:EA:11:2C:00:01' });
+    const bridges: StpBridge[] = [
+      { device_id: 1, bridge_name: 'bridge', bridge_id: '0x1000.D0:EA:11:0A:00:01', root_bridge: true, root_bridge_id: '0x1000.D0:EA:11:0A:00:01', root_port: null, root_path_cost: 0 },
+      { device_id: 2, bridge_name: 'bridge', bridge_id: '0x8000.D0:EA:11:2C:00:01', root_bridge: false, root_bridge_id: '0x1000.D0:EA:11:0A:00:01', root_port: 'ether3', root_path_cost: 200020 },
+      { device_id: 3, bridge_name: 'bridge1', bridge_id: '0x8000.64:D1:54:00:00:03', root_bridge: false, root_bridge_id: '0x1000.D0:EA:11:0A:00:01', root_port: 'ether1', root_path_cost: 200030, designated_bridge_id: d.bridgeId },
+    ];
+    const sxt = resolveStpUpstreams(bridges, []).find((v) => v.deviceId === 3);
+    expect(sxt).toMatchObject({ upstreamDeviceId: 2, confidence: 'resolved', method: 'designated' });
   });
 });

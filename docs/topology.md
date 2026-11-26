@@ -112,7 +112,8 @@ upstream undecided. A device at one site was drawn under a router at another (#3
 Data from before the designated bridge was read falls back to the older rule: the neighbour on
 the root port that is in the same STP domain and closer to the root, used only when exactly one
 qualifies. Where spanning tree proves a cable that discovery left out (a switch seen only by CDP
-or MNDP on a busy port), it's drawn as an **stp** link.
+or MNDP on a busy port), it's drawn as an **stp** link. RouterOS 6 devices get one too: they name the far
+end's bridge `designated-bridge` where RouterOS 7 says `designated-bridge-id` (D507).
 
 Where STP says the root belongs to equipment outside the fleet, the top device of that part of
 the map says so, with the root's bridge id, and with a name ("probably 2GT-NW-CORE") when a
