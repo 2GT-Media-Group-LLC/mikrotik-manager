@@ -272,7 +272,7 @@ export default function SettingsPage() {
   const { data: acmeSettings, isLoading: acmeLoading, error: acmeLoadError } = useQuery({
     queryKey: ['cert-acme'],
     queryFn: () => certApi.getAcme().then((r) => r.data),
-    enabled: activeTab === 'certificate' && settingsReader && !!certInfo && !certInfo.managed_externally,
+    enabled: activeTab === 'certificate' && settingsReader && !!certInfo && !certInfo.http_only,
   });
   const [acmeForm, setAcmeForm] = useState({ domain: '', email: '', server: '' });
   const [acmeError, setAcmeError] = useState('');
@@ -1545,15 +1545,15 @@ export default function SettingsPage() {
           </p>
         </div>
       )}
-      {activeTab === 'certificate' && certInfo?.managed_externally && (
+      {activeTab === 'certificate' && certInfo?.http_only && (
         <div className="card p-5 max-w-2xl">
           <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Web Certificate</h3>
           <p className="text-sm text-gray-500 dark:text-slate-400">
-            Your reverse proxy manages the HTTPS certificate. Make certificate changes there.
+            The manager is running in HTTP-only mode. If you use a reverse proxy for HTTPS, manage the certificate there.
           </p>
         </div>
       )}
-      {activeTab === 'certificate' && certInfo && !certInfo.managed_externally && (
+      {activeTab === 'certificate' && certInfo && !certInfo.http_only && (
         <div className="space-y-4 max-w-2xl">
           {/* Current cert info */}
           <div className="card p-5">

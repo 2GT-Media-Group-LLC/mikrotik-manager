@@ -12,13 +12,13 @@ import { requireAuth, requireAdmin, requireSettingsRead } from '../middleware/au
 const router = Router();
 router.use(requireAuth);
 
-function webTlsManagedExternally(): boolean {
-  return process.env.TLS_MODE === 'proxy';
+function isHttpOnly(): boolean {
+  return process.env.TLS_MODE === 'http';
 }
 
 const requireLocalWebTls: RequestHandler = (_req, res, next) => {
-  if (webTlsManagedExternally()) {
-    res.status(409).json({ error: 'The reverse proxy manages the web certificate.' });
+  if (isHttpOnly()) {
+    res.status(409).json({ error: 'Web certificate settings are disabled in HTTP-only mode.' });
     return;
   }
   next();
@@ -266,8 +266,8 @@ function parseCertInfo(pem: string) {
 
 // GET /api/cert — current certificate info
 router.get('/', async (_req, res) => {
-  if (webTlsManagedExternally()) {
-    return res.json({ exists: false, managed_externally: true });
+  if (isHttpOnly()) {
+    return res.json({ exists: false, http_only: true });
   }
   if (!existsSync(CERT_PATH)) {
     return res.json({ exists: false });

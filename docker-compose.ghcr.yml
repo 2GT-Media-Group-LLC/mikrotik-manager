@@ -29,12 +29,12 @@ services:
     environment:
       # The redirect from HTTP keeps a non-default HTTPS port (outside review O5).
       HTTPS_PORT: ${HTTPS_PORT:-443}
-      # Behind your own reverse proxy that terminates TLS (#256): TLS_MODE=proxy
-      # serves the app over plain HTTP on HTTP_PORT, and TRUSTED_PROXIES names the
-      # proxy (address or CIDR) whose X-Forwarded-For / -Proto are believed.
+      # Behind a reverse proxy (#256), TLS_MODE=proxy serves HTTP and HTTPS.
+      # TLS_MODE=http serves HTTP only. TRUSTED_PROXIES names the proxies
+      # (addresses or CIDRs) whose X-Forwarded-For / -Proto are believed.
       TLS_MODE: ${TLS_MODE:-https}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
-      BACKEND_UPSTREAM: ${BACKEND_UPSTREAM-backend:3001}
+      BACKEND_UPSTREAM: ${BACKEND_UPSTREAM:-backend:3001}
       # Optional HTTP-01 Let's Encrypt support; requires public DNS and port 80.
       ACME_DOMAIN: ${ACME_DOMAIN:-}
       ACME_EMAIL: ${ACME_EMAIL:-}

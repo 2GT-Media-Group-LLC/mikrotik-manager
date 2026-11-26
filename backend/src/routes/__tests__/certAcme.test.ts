@@ -53,11 +53,18 @@ describe('manager ACME settings', () => {
   });
   afterAll(() => { process.env = originalEnv; });
 
-  it('reports that the reverse proxy manages web TLS', async () => {
-    process.env.TLS_MODE = 'proxy';
+  it('reports that the manager is serving HTTP only', async () => {
+    process.env.TLS_MODE = 'http';
 
     await request(app()).get('/api/cert').set('x-test-role', 'admin')
-      .expect(200, { exists: false, managed_externally: true });
+      .expect(200, { exists: false, http_only: true });
+  });
+
+  it('keeps local certificate settings available in proxy mode', async () => {
+    process.env.TLS_MODE = 'proxy';
+
+    await request(app()).get('/api/cert/acme').set('x-test-role', 'admin').expect(200);
+    await request(app()).post('/api/cert/upload').set('x-test-role', 'admin').send({}).expect(400);
   });
 
   it.each([
@@ -67,8 +74,8 @@ describe('manager ACME settings', () => {
     ['delete', '/acme'],
     ['put', '/acme/ca-bundle'],
     ['delete', '/acme/ca-bundle'],
-  ] as const)('blocks %s %s when the reverse proxy manages web TLS', async (method, path) => {
-    process.env.TLS_MODE = 'proxy';
+  ] as const)('blocks %s %s in HTTP-only mode', async (method, path) => {
+    process.env.TLS_MODE = 'http';
 
     await request(app())[method](`/api/cert${path}`).set('x-test-role', 'admin').expect(409);
     expect(writeFile).not.toHaveBeenCalled();

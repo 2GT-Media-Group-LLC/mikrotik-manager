@@ -4,6 +4,13 @@
 ([release channels](configuration.md#release-channels)): its features are complete, and only
 fixes go in from here. For stable, stay on 1.0 below.
 
+## Planned for 1.2
+
+- Use `TLS_MODE=http` for HTTP-only deployments behind a reverse proxy. `TLS_MODE=proxy`
+  continues serving both HTTP and HTTPS with the manager's certificate.
+- Set `BACKEND_UPSTREAM` to use a different backend address. Leaving it unset or empty
+  uses `backend:3001`. [Reverse proxy configuration](configuration.md#behind-a-reverse-proxy)
+
 ## What's new in 1.1
 
 Everything 1.1 adds beyond the latest 1.0.x, for anyone coming from 1.0. Fixes aren't listed

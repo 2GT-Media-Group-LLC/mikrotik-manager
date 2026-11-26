@@ -2,20 +2,20 @@
 set -e
 
 # Quote the address as one nginx argument and let nginx parse it.
-BACKEND_UPSTREAM=$(printf '%s\n' "${BACKEND_UPSTREAM-backend:3001}" | sed 's/[\\"]/\\&/g')
+BACKEND_UPSTREAM=$(printf '%s\n' "${BACKEND_UPSTREAM:-backend:3001}" | sed 's/[\\"]/\\&/g')
 mkdir -p /var/cache/nginx
 printf 'server "%s";\n' "$BACKEND_UPSTREAM" > /var/cache/nginx/backend-upstream.conf
 
-# TLS_MODE (#256): "https" (the default) redirects port 80 to HTTPS; "proxy"
-# serves the app over plain HTTP on port 80, for a reverse proxy in front that
-# terminates TLS with your own certificate.
+# TLS_MODE (#256): "https" redirects HTTP to HTTPS, "proxy" serves both
+# HTTP and HTTPS, and "http" serves HTTP only.
 TLS_MODE="${TLS_MODE:-https}"
 case "$TLS_MODE" in
-    https|proxy) ;;
-    *) echo "[entrypoint] warning: TLS_MODE '$TLS_MODE' isn't https or proxy; using https"; TLS_MODE=https ;;
+    https|proxy|http) ;;
+    *) echo "[entrypoint] warning: TLS_MODE '$TLS_MODE' isn't https, proxy or http; using https"; TLS_MODE=https ;;
 esac
 
-if [ "$TLS_MODE" = "https" ]; then
+if [ "$TLS_MODE" != "http" ]; then
+    echo 'include /etc/nginx/mtm-https.conf;' > /var/cache/nginx/https-mode.conf
     CERT=/certs/server.crt
     KEY=/certs/server.key
     RELOAD_SIGNAL=/certs/.reload
@@ -71,16 +71,16 @@ if [ "$TLS_MODE" = "https" ]; then
     else
         echo "set \$https_port_suffix \":$HTTPS_PORT\";" > /var/cache/nginx/https-port.conf
     fi
+else
+    : > /var/cache/nginx/https-mode.conf
 fi
 
-if [ "$TLS_MODE" = "proxy" ]; then
-    echo 'include /etc/nginx/mtm-app.conf;' > /var/cache/nginx/http-mode.conf
-    : > /var/cache/nginx/https-mode.conf
-    echo "[entrypoint] TLS_MODE=proxy: serving the app over plain HTTP on port 80 for a reverse proxy."
-    echo "[entrypoint] Keep port ${HTTP_PORT:-80} reachable only by the proxy (BIND_ADDRESS, or a firewall), since logins cross it unencrypted."
-else
-    echo 'include /etc/nginx/mtm-https.conf;' > /var/cache/nginx/https-mode.conf
+if [ "$TLS_MODE" = "https" ]; then
     printf '%s\n' 'location / {' '    include /var/cache/nginx/https-port.conf;' '    return 301 https://$host$https_port_suffix$request_uri;' '}' > /var/cache/nginx/http-mode.conf
+else
+    echo 'include /etc/nginx/mtm-app.conf;' > /var/cache/nginx/http-mode.conf
+    echo "[entrypoint] TLS_MODE=$TLS_MODE: serving the app over plain HTTP on port 80."
+    echo "[entrypoint] Keep port ${HTTP_PORT:-80} reachable only by the proxy (BIND_ADDRESS, or a firewall), since logins cross it unencrypted."
 fi
 
 # TRUSTED_PROXIES (#256): reverse proxies whose X-Forwarded-For and
@@ -114,8 +114,8 @@ if [ -n "$TRUSTED" ]; then
     echo "[entrypoint] Trusting forwarded client address and scheme from:$TRUSTED"
 else
     echo 'map $scheme $fwd_proto { default $scheme; }' > "$TRUST_FILE"
-    if [ "$TLS_MODE" = "proxy" ]; then
-        echo "[entrypoint] warning: TLS_MODE=proxy without TRUSTED_PROXIES: every request will be logged as coming from the proxy, and per-address login limits apply to all users together. Set TRUSTED_PROXIES to the proxy's address."
+    if [ "$TLS_MODE" != "https" ]; then
+        echo "[entrypoint] warning: TLS_MODE=$TLS_MODE without TRUSTED_PROXIES: requests through a proxy will be logged as coming from the proxy, and per-address login limits apply to all users together. Set TRUSTED_PROXIES to the proxy's address."
     fi
 fi
 
@@ -323,10 +323,18 @@ elif [ "$TLS_MODE" = "https" ]; then
             sleep 5
         done
     ) &
+elif [ "$TLS_MODE" = "proxy" ]; then
+    read_acme_settings
+    if ! rm -f "$ACME_STATUS_FILE"; then
+        echo "[entrypoint] error: could not clear the ACME attempt status."
+    fi
+    if [ -n "$ACME_DOMAIN" ] || [ -n "$ACME_EMAIL" ]; then
+        echo "[entrypoint] warning: ACME requires a domain and TLS_MODE=https; ACME is disabled."
+    fi
 fi
 
 # Background watcher: reload nginx when backend writes a .reload signal file
-if [ "$TLS_MODE" = "https" ]; then
+if [ "$TLS_MODE" != "http" ]; then
     (while true; do
         if [ -f "$RELOAD_SIGNAL" ]; then
             rm -f "$RELOAD_SIGNAL"
