@@ -537,11 +537,13 @@ export async function setClients(id: number, deviceIds: number[], enable: boolea
 }
 
 /** Take a mirror away: devices stop using it, the server loses the files and the login. */
-export async function removeMirror(id: number): Promise<{ notes: string[] }> {
+export async function removeMirror(id: number, clientIds?: number[]): Promise<{ notes: string[] }> {
   const mirror = await getMirror(id);
   if (!mirror) throw new Error('Mirror not found');
   const notes: string[] = [];
-  const clients = (await query<{ device_id: number }>(
+  // Only the clients the caller may still reconfigure, when the route says
+  // which (GHSA-mcr6-fpx6-h5p9); the rest keep their settings.
+  const clients = clientIds ?? (await query<{ device_id: number }>(
     `SELECT device_id FROM firmware_mirror_clients WHERE mirror_id = $1`, [id])).map((r) => r.device_id);
   for (const r of await setClients(id, clients, false)) if (!r.ok) notes.push(`${r.name}: ${r.message}`);
   try {
