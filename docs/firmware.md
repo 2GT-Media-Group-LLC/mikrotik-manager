@@ -55,7 +55,9 @@ Each device goes through the same sequence:
    Guard, the same way a bulk command does, only on a device that actually upgraded (not one
    skipped as already up to date), and only once its new version is verified. What they print
    is kept on the device's line in the rollout. If they fail, the upgrade still counts as done,
-   but halt-on-failure applies: the same commands would likely fail on the next device too
+   but halt-on-failure applies: the same commands would likely fail on the next device too.
+   Creating a rollout with them, and starting one that has them, needs admin access to every
+   device in it.
 
 ### RouterBOOT only
 
@@ -294,7 +296,10 @@ one. One rollout runs at a time.
 A scheduled rollout only starts inside its window: from its scheduled time until **Don't
 start after**, or an hour later if that's left blank. If the manager can't start it in time
 (it was down, or an earlier rollout ran long) the rollout is marked **missed** and nothing is
-upgraded; schedule it again when it suits. Before 0.24.39 a late rollout started whenever the
+upgraded; schedule it again when it suits. When a scheduled rollout comes due it's checked against the
+account that scheduled it, as that account is now: if it has since lost access to one of the
+devices (or to post-upgrade commands), or was removed, the rollout is cancelled with the reason
+on each device's line, and nothing is upgraded. Before 0.24.39 a late rollout started whenever the
 manager got to it, which could mean rebooting devices in the middle of the day.
 
 Devices already belonging to an unfinished rollout are refused by name when you try

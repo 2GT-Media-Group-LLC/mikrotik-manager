@@ -22,6 +22,7 @@ import { runSshCommand, looksLikeFailure, type SshExecDevice } from './sshExec';
 import { withSafeApply, type GuardDevice } from './changeGuard/ChangeGuard';
 import { fillSecrets, maskSecrets } from './commandSecrets';
 import { logSafe } from '../utils/logSafe';
+import { scheduledRolloutRefusal } from '../utils/rolloutAccess';
 
 const REBOOT_GRACE_MS = 25_000;      // let the device actually go down
 /**
@@ -214,6 +215,20 @@ export class FirmwareOrchestrator {
         continue;
       }
       if (decision === 'start') {
+        const refusal = await scheduledRolloutRefusal(r.id).catch((e) => `Could not check who scheduled it: ${(e as Error).message}`);
+        if (refusal) {
+          await query(
+            `UPDATE firmware_rollouts SET status = 'cancelled', finished_at = NOW() WHERE id = $1 AND status = 'pending'`,
+            [r.id]
+          );
+          await query(
+            `UPDATE firmware_rollout_devices SET status = 'skipped', error = $2, finished_at = NOW()
+              WHERE rollout_id = $1 AND status = 'pending'`,
+            [r.id, refusal.slice(0, 500)]
+          );
+          console.warn('[Firmware] rollout #%d (%s) was not started: %s', r.id, logSafe(r.name), logSafe(refusal));
+          continue;
+        }
         await this.start(r.id).catch(e => console.error(`[Firmware] scheduled start of #${r.id} failed:`, e));
         return;
       }

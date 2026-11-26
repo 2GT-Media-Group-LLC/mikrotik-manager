@@ -1756,6 +1756,10 @@ CREATE TABLE IF NOT EXISTS ros_cve_details (
 -- so editing the template later doesn't change a scheduled rollout.
 ALTER TABLE firmware_rollouts ADD COLUMN IF NOT EXISTS post_command TEXT;
 ALTER TABLE firmware_rollouts ADD COLUMN IF NOT EXISTS post_template_name VARCHAR(100);
+-- Who made a rollout, re-checked when a scheduled one comes due (GHSA-mcr6-fpx6-h5p9).
+-- No foreign key: a removed account must read as removed, not as a rollout from
+-- before this column, which has none and runs as it always did.
+ALTER TABLE firmware_rollouts ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER;
 ALTER TABLE firmware_rollout_devices ADD COLUMN IF NOT EXISTS post_status VARCHAR(12);
 ALTER TABLE firmware_rollout_devices ADD COLUMN IF NOT EXISTS post_output TEXT;
 ALTER TABLE firmware_rollout_devices ADD COLUMN IF NOT EXISTS post_error TEXT;

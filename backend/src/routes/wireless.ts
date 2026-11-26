@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { wirelessDeviceSql, radioDeviceSql, REMOTE_RADIO } from '../services/mikrotik/capsman';
 import { channelUsage } from '../services/channelUsage';
-import { deviceSiteAccess, deviceIdParam, deviceIdQuery, devicesDenied, strictIdList } from '../utils/siteAccess';
+import { deviceSiteAccess, deviceIdParam, deviceIdQuery, devicesDenied, strictIdList, fluxDeviceFilter } from '../utils/siteAccess';
 import { deviceWriteLock, deviceIdFromPath } from '../services/changeGuard/deviceLock';
 import { withGuardedChange } from '../services/changeGuard/guardedRoute';
 import { query } from '../config/database';
@@ -194,6 +194,7 @@ router.get('/', async (req: Request, res: Response) => {
  */
 router.get('/capsman', async (req: Request, res: Response) => {
   const siteFilter = siteScopeDevices(activeSite(req));
+  const capScope = siteScopeDevices(activeSite(req), 'd');
   const controllers = await query<{
     id: number; name: string; ip_address: string; model: string | null;
     status: string; wifi_role: string | null;
@@ -211,11 +212,14 @@ router.get('/capsman', async (req: Request, res: Response) => {
   const [radios, configs, provisioning] = await Promise.all([
     query(`
       SELECT r.controller_device_id, r.radio_mac, r.interface_name, r.local, r.hw_type,
-             r.current_channel, r.remote_cap_name, r.matched_device_id,
+             r.current_channel, r.remote_cap_name,
+             CASE WHEN d.id IS NULL THEN NULL ELSE r.matched_device_id END AS matched_device_id,
              r.state, r.registered_peers, r.authorized_peers, r.tx_power, r.ssid,
              d.name AS matched_device_name, d.status AS matched_device_status
       FROM capsman_radios r
-      LEFT JOIN devices d ON d.id = r.matched_device_id
+      -- A CAP in a site this account can't see stays what the controller
+      -- knows of it, not the managed device (GHSA-mcr6-fpx6-h5p9).
+      LEFT JOIN devices d ON d.id = r.matched_device_id ${capScope ? `AND ${capScope}` : ''}
       WHERE r.controller_device_id = ANY($1::int[])
       ORDER BY r.local DESC, d.name NULLS LAST, r.interface_name
     `, [ids]),
@@ -241,7 +245,7 @@ router.get('/capsman', async (req: Request, res: Response) => {
            wi.managed_by_capsman, wi.radio_mac, wi.registered_clients, d.name AS device_name
     FROM wireless_interfaces wi
     JOIN devices d ON d.id = wi.device_id
-    WHERE wi.managed_by_capsman = TRUE
+    WHERE wi.managed_by_capsman = TRUE ${capScope ? `AND ${capScope}` : ''}
     ORDER BY d.name, wi.name
   `);
 
@@ -924,6 +928,9 @@ router.get('/rf/tx-quality', async (req: Request, res: Response) => {
   const queryApi = getQueryApi();
   const bucket = process.env.INFLUXDB_BUCKET || 'mikrotik';
   const deviceFilter = deviceId ? `|> filter(fn: (r) => r["device_id"] == ${fluxString(String(deviceId))})` : '';
+  // Without ?deviceId= this is every radio, so it's held to the account's
+  // sites like the other fleet views (GHSA-mcr6-fpx6-h5p9).
+  const siteFilter = deviceId ? '' : await fluxDeviceFilter(activeSite(req));
 
   const flux = `
     from(bucket: "${bucket}")
@@ -931,6 +938,7 @@ router.get('/rf/tx-quality', async (req: Request, res: Response) => {
       |> filter(fn: (r) => r["_measurement"] == "wireless_radio_quality")
       |> filter(fn: (r) => r["_field"] == "tx_retry_pct")
       ${deviceFilter}
+      ${siteFilter}
       |> group(columns: ["device_id", "device_name", "interface", "band"])
       |> last()
   `;

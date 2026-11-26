@@ -40,7 +40,30 @@ async function loadVisible(req: Request, res: Response, manage: boolean): Promis
     res.status(403).json({ error: m.site_id == null ? 'Only fleet administrators manage the fleet mirror' : 'Only this site’s administrators manage its mirror' });
     return null;
   }
+  // The package server is judged by the site it's in now, not the one the
+  // mirror was set up in: moved to another site, it's that site's to change
+  // (GHSA-mcr6-fpx6-h5p9).
+  if (manage) {
+    const server = await queryOne<{ site_id: number | null }>(`SELECT site_id FROM devices WHERE id = $1`, [m.device_id]);
+    if (server && !canManage(c, server.site_id)) {
+      res.status(403).json({ error: 'The package server has moved to a site you don’t administer' });
+      return null;
+    }
+  }
   return m;
+}
+
+/**
+ * The mirror's clients this caller may reconfigure: those in a site they
+ * administer now. A client moved to another site since is left alone, rather
+ * than changed from the site it left (GHSA-mcr6-fpx6-h5p9).
+ */
+async function manageableClients(m: MirrorRow, req: Request): Promise<number[]> {
+  const c = caller(req);
+  const rows = await query<{ device_id: number; site_id: number | null }>(
+    `SELECT mc.device_id, d.site_id FROM firmware_mirror_clients mc JOIN devices d ON d.id = mc.device_id
+      WHERE mc.mirror_id = $1`, [m.id]);
+  return rows.filter((r) => canManage(c, r.site_id)).map((r) => r.device_id);
 }
 
 async function describe(m: MirrorRow, c: PresetCaller) {
@@ -232,7 +255,7 @@ router.put('/:id', async (req: Request, res: Response) => {
   // Devices are told the new address straight away.
   let clientResults = null;
   if (addressChanged) {
-    const ids = (await query<{ device_id: number }>(`SELECT device_id FROM firmware_mirror_clients WHERE mirror_id = $1`, [m.id])).map((r) => r.device_id);
+    const ids = await manageableClients(m, req);
     if (ids.length) clientResults = await setClients(m.id, ids, true);
   }
   res.json({ mirror: await describe((await getMirror(m.id))!, caller(req)), clients: clientResults });
@@ -244,7 +267,7 @@ router.post('/:id/deploy', async (req: Request, res: Response) => {
   if (!m) return;
   try {
     const out = await deployMirror(m.id);
-    const ids = (await query<{ device_id: number }>(`SELECT device_id FROM firmware_mirror_clients WHERE mirror_id = $1`, [m.id])).map((r) => r.device_id);
+    const ids = await manageableClients(m, req);
     const clients = ids.length ? await setClients(m.id, ids, true) : [];
     res.json({ user: out.user, clients, mirror: await describe((await getMirror(m.id))!, caller(req)) });
   } catch (e) {
@@ -286,7 +309,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
   const m = await loadVisible(req, res, true);
   if (!m) return;
   try {
-    res.json(await removeMirror(m.id));
+    res.json(await removeMirror(m.id, await manageableClients(m, req)));
   } catch (e) {
     res.status(502).json({ error: (e as Error).message });
   }

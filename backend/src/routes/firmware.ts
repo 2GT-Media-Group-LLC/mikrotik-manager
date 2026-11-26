@@ -16,6 +16,7 @@ import { mirrorVersions } from '../services/firmwareMirror';
 import { findUpstreamWithinSelection } from '../utils/rolloutTopology';
 import type { StpBridge } from '../utils/stpUpstream';
 import { refuseSecrets } from '../utils/secretAccess';
+import { rolloutRefusal } from '../utils/rolloutAccess';
 
 const router = Router();
 router.use(requireAuth);
@@ -250,11 +251,12 @@ router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
 
   const rollout = await queryOne<{ id: number }>(
     `INSERT INTO firmware_rollouts (name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, scheduled_until, wave_concurrency, package_source,
-                                    post_command, post_template_name, kind)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+                                    post_command, post_template_name, kind, created_by_user_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
     [name.trim().slice(0, 100), halt_on_failure !== false, pre_backup !== false, kind === 'routeros' && routerboot_after === true,
      scheduled_at || null, scheduled_until || null, clampConcurrency(wave_concurrency ?? 1),
-     package_source === 'mirror' ? 'mirror' : 'mikrotik', post?.command ?? null, post?.name ?? null, kind]);
+     package_source === 'mirror' ? 'mirror' : 'mikrotik', post?.command ?? null, post?.name ?? null, kind,
+     req.user!.userId]);
   for (const d of devices) {
     await query(
       `INSERT INTO firmware_rollout_devices (rollout_id, device_id, wave) VALUES ($1,$2,$3)`,
@@ -363,8 +365,16 @@ router.get('/rollouts/:id', async (req: Request, res: Response) => {
 
 // POST /api/firmware/rollouts/:id/start
 router.post('/rollouts/:id/start', requireWrite, async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+  const rollout = await queryOne<{ post_command: string | null }>(`SELECT post_command FROM firmware_rollouts WHERE id = $1`, [id]);
+  if (!rollout) return res.status(404).json({ error: 'Rollout not found' });
+  // Starting runs what the rollout holds, so it needs what creating it did
+  // (GHSA-mcr6-fpx6-h5p9): an operator could start an admin's post-upgrade commands.
+  const devices = await query<{ device_id: number }>(`SELECT device_id FROM firmware_rollout_devices WHERE rollout_id = $1`, [id]);
+  const refusal = await rolloutRefusal(req.user!, devices.map((d) => d.device_id), !!rollout.post_command);
+  if (refusal) return res.status(403).json({ error: refusal });
   try {
-    await firmwareOrchestrator.start(parseInt(req.params.id, 10));
+    await firmwareOrchestrator.start(id);
     res.json({ ok: true });
   } catch (e) {
     res.status(409).json({ error: (e as Error).message });
