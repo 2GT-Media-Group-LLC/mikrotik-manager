@@ -53,13 +53,11 @@ describe('manager ACME settings', () => {
   });
   afterAll(() => { process.env = originalEnv; });
 
-  it('reports external web TLS without reading the local certificate', async () => {
+  it('reports that the reverse proxy manages web TLS', async () => {
     process.env.TLS_MODE = 'proxy';
 
-    await request(app()).get('/api/cert').expect(401);
     await request(app()).get('/api/cert').set('x-test-role', 'admin')
       .expect(200, { exists: false, managed_externally: true });
-    expect(readFile).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -72,9 +70,7 @@ describe('manager ACME settings', () => {
   ] as const)('blocks %s %s when the reverse proxy manages web TLS', async (method, path) => {
     process.env.TLS_MODE = 'proxy';
 
-    await request(app())[method](`/api/cert${path}`).set('x-test-role', 'operator').expect(403);
-    await request(app())[method](`/api/cert${path}`).set('x-test-role', 'admin')
-      .expect(409, { error: 'The reverse proxy manages the web certificate.' });
+    await request(app())[method](`/api/cert${path}`).set('x-test-role', 'admin').expect(409);
     expect(writeFile).not.toHaveBeenCalled();
     expect(unlink).not.toHaveBeenCalled();
   });

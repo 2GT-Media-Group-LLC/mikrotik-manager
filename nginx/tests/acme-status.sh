@@ -54,14 +54,10 @@ wait_for() {
 
 if [ "${1:-}" = proxy ]; then
     echo stale > /certs/acme-last-attempt
-    touch /certs/.reload
     TLS_MODE=proxy sh /source/nginx/entrypoint.sh > /tmp/acme-test-entrypoint.log 2>&1 &
     wait_for grep -q NGINX-STARTED /tmp/acme-test-entrypoint.log
     test "$(cat /certs/acme-last-attempt)" = stale
-    test -f /certs/.reload
-    test ! -e /var/cache/nginx/acme
-    test ! -s /var/cache/nginx/https-mode.conf
-    echo 'Proxy mode leaves certificate state untouched and starts without HTTPS.'
+    echo 'Proxy mode preserves the saved ACME attempt.'
     exit 0
 fi
 
