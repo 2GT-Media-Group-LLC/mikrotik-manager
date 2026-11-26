@@ -27,7 +27,7 @@ Set in `.env` at the project root. Changing any of these requires a container re
 | `BIND_ADDRESS` | *every interface* | Host address the web UI is published on. See [Network exposure](#network-exposure). |
 | `NETFLOW_BIND_ADDRESS` | *every interface* | Host address the NetFlow collector (UDP 2055) is published on. |
 | `TLS_MODE` | `https` | `proxy` when your own reverse proxy terminates TLS. See [Behind a reverse proxy](#behind-a-reverse-proxy). |
-| `BACKEND_UPSTREAM` | `backend:3001` | Internal backend address nginx uses for API requests and live updates. |
+| `BACKEND_UPSTREAM` | `backend:3001` | Internal backend address as `host:port` or `[IPv6]:port`. |
 | `TRUSTED_PROXIES` | *none* | Your reverse proxy's address or range, so the client address it forwards is believed. |
 
 > Never commit `.env`. It is already listed in `.gitignore`.
@@ -385,19 +385,12 @@ Then `docker compose up -d`.
 Point the proxy at `http://<manager host>:<HTTP_PORT>`, and turn on WebSocket support: live
 updates and the device terminal run over `/socket.io/`.
 
-If the backend service has a different name or port, set `BACKEND_UPSTREAM` on nginx.
-Use a hostname or IPv4 address with a port, such as `mtm-api:3001`, or a bracketed
-IPv6 address with a port, such as `[2001:db8::10]:3001`. nginx resolves the address
-when it loads its configuration.
+When running the images directly, set `TLS_MODE=proxy` on both containers.
+nginx can start without a certificate mount in this mode.
 
-For separate containers, set `TLS_MODE=proxy` on both nginx and the backend.
-nginx starts without a certificate mount. **Settings → Certificate** directs you to
-your reverse proxy. The existing certificate volume can be reused if you switch
-back to `TLS_MODE=https`.
-
-For a reverse proxy running directly on the same host, save this as
-`compose.proxy.yml`. It publishes the manager's HTTP listener on loopback port
-8080 and leaves host ports 80 and 443 available to the proxy. [Compose port overrides](https://docs.docker.com/reference/compose-file/merge/#replace-value)
+For a reverse proxy running directly on the host, point it at
+`http://127.0.0.1:8080` and load this override after the base Compose file with
+`-f`. [Compose port overrides](https://docs.docker.com/reference/compose-file/merge/#replace-value)
 
 ```yaml
 services:
@@ -405,10 +398,6 @@ services:
     ports: !override
       - "127.0.0.1:8080:80"
 ```
-
-Run `docker compose -f docker-compose.yml -f compose.proxy.yml up -d` and point the
-proxy at `http://127.0.0.1:8080`. For a prebuilt deployment, use
-`docker-compose.ghcr.yml` as the first file.
 
 Give the proxy a read timeout of at least 300 seconds (the same as the manager's own). Many
 proxies default to 60, and a protected change on a slow device can take longer: on a CRS112 a
