@@ -161,7 +161,8 @@ under **Replies come from**. Spaces, dashes, brackets and letter case don't matt
 ## SMS inbox
 
 The **SMS inbox** card on the LTE tab shows the modem's inbox: sender, time and text, read from the
-device when you open it and never stored. Delete one message, every message from one sender, or
+device when the tab opens and never stored. The header shows how many messages there are; click
+**Show** to read them. Delete one message, every message from one sender, or
 all of them. A text can hold anything sent to the SIM, codes included, so the card is only there
 for users who can change the device. If receiving is off on the modem, the card says so; new
 messages then stay on the SIM and don't show.

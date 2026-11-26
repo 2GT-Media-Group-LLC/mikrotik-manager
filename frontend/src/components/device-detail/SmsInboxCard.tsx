@@ -19,7 +19,9 @@ export default function SmsInboxCard({ deviceId }: { deviceId: number }) {
   const { data, isFetching, error, refetch } = useQuery({
     queryKey: ['lte-sms', deviceId],
     queryFn: () => smsApi.inbox(deviceId).then((r) => r.data),
-    enabled: canWrite && open,
+    // Read when the tab opens so the count shows in the header; the messages
+    // themselves stay folded until Show (D85).
+    enabled: canWrite,
     retry: false,
   });
   const remove = useMutation({
