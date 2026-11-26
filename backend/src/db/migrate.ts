@@ -1,6 +1,7 @@
 import { pool } from '../config/database';
 import bcrypt from 'bcryptjs';
 import { backfillProxyConnections } from '../services/ProxyLogService';
+import { validatePassword } from '../utils/passwordPolicy';
 
 const MIGRATION_SQL = `
 -- Users
@@ -2241,16 +2242,25 @@ export async function runMigrations(): Promise<void> {
     );
     if (adopted.rowCount) console.log(`Assigned ${adopted.rowCount} device(s) to the default site`);
 
-    // Create default admin user if no users exist
+    // Bootstrap the admin account only when no users exist.
     const userCount = await client.query('SELECT COUNT(*) FROM users');
     if (parseInt(userCount.rows[0].count, 10) === 0) {
-      const hash = await bcrypt.hash('admin', 12);
-      await client.query(
-        `INSERT INTO users (username, password_hash, role, must_change_password) VALUES ($1, $2, $3, TRUE)`,
-        ['admin', hash, 'admin']
+      const password = process.env.INITIAL_ADMIN_PASSWORD;
+      const mustChange = password === undefined;
+      if (!mustChange) {
+        const error = validatePassword(password);
+        if (error) throw new Error(`Invalid INITIAL_ADMIN_PASSWORD: ${error}`);
+      }
+      const hash = await bcrypt.hash(password ?? 'admin', 12);
+      const seeded = await client.query(
+        `INSERT INTO users (username, password_hash, role, must_change_password) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (username) DO NOTHING`,
+        ['admin', hash, 'admin', mustChange]
       );
-      console.log('Default admin user created (username: admin, password: admin)');
-      console.log('The password must be changed at first login.');
+      if (seeded.rowCount) {
+        console.log('Initial admin account created');
+        if (mustChange) console.log('The default password must be changed at first login.');
+      }
     }
 
     // Existing installs still on admin/admin get the same forced change. Checked

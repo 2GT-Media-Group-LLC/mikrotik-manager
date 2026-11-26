@@ -84,13 +84,34 @@ Before 0.24.51 the database password was part of a connection URL, so a password
 
 ## First login
 
-A new install has one account, **admin** with the password **admin**. Signing in with it
+By default, a new install has one account, **admin** with the password **admin**. Signing in with it
 goes straight to a page that asks for a new password (at least 10 characters and at most
 72 bytes, with a letter and a number); nothing else works until it is set. The 72-byte limit
 is bcrypt's: it ignores anything longer, so a longer password changed only at the end would
 still accept the old one. The login page shows the
 default credentials only until then. An existing install still using admin/admin gets
 the same prompt at its next login.
+
+To sign in immediately with your own password on a fresh database, set
+`INITIAL_ADMIN_PASSWORD` in the backend environment. Use the password policy above.
+An empty or invalid value stops the first startup.
+
+For Compose, set the password in `.env` and pass it to the backend with an override file
+such as `compose.bootstrap.yml`:
+
+```yaml
+services:
+  backend:
+    environment:
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?Set INITIAL_ADMIN_PASSWORD}
+```
+
+Start with `docker compose -f docker-compose.yml -f compose.bootstrap.yml up -d`
+(use `docker-compose.ghcr.yml` in place of `docker-compose.yml` for prebuilt images).
+
+The backend reads this setting only when creating the first admin account. Once that
+account exists, you can remove the password from `.env` and start Compose without the
+override. Change the password in the app to rotate it.
 
 ## Time display
 
