@@ -2421,8 +2421,8 @@ device-mode can only be changed at the device. Their advice is unchanged.</p>
 <td>Large frames dropped without error</td>
 </tr>
 <tr>
-<td>Duplicate address on two interfaces</td>
-<td>Only one can answer; which is not stated by the config</td>
+<td>Duplicate address on two interfaces in the same VRF</td>
+<td>Only one can answer; which is not stated by the config. <code>/32</code> addresses, including addresses without a prefix, are excluded only when their reported network differs from the address. VRF membership follows ordered VRF entries (RouterOS 7 <code>/ip/vrf</code> or RouterOS 6 <code>/ip/route/vrf</code>) and interface lists; interfaces without an explicit VRF are checked together in <code>main</code>. If membership cannot be determined, the audit reports it as unconfirmed instead.</td>
 </tr>
 <tr>
 <td>Ingress port would reject the frames management arrives in</td>
