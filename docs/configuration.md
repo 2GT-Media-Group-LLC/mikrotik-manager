@@ -395,16 +395,20 @@ nginx starts without a certificate mount. **Settings → Certificate** directs y
 your reverse proxy. The existing certificate volume can be reused if you switch
 back to `TLS_MODE=https`.
 
-The base Compose file declares both host port mappings. If your proxy needs the
-same host's port 443, use a Compose override to publish only the HTTP port. This
-example is for a proxy running on the host. [Compose port overrides](https://docs.docker.com/reference/compose-file/merge/#replace-value)
+For a reverse proxy running directly on the same host, save this as
+`compose.proxy.yml`. It publishes the manager's HTTP listener on loopback port
+8080 and leaves host ports 80 and 443 available to the proxy. [Compose port overrides](https://docs.docker.com/reference/compose-file/merge/#replace-value)
 
 ```yaml
 services:
   nginx:
     ports: !override
-      - "127.0.0.1:${HTTP_PORT:-80}:80"
+      - "127.0.0.1:8080:80"
 ```
+
+Run `docker compose -f docker-compose.yml -f compose.proxy.yml up -d` and point the
+proxy at `http://127.0.0.1:8080`. For a prebuilt deployment, use
+`docker-compose.ghcr.yml` as the first file.
 
 Give the proxy a read timeout of at least 300 seconds (the same as the manager's own). Many
 proxies default to 60, and a protected change on a slow device can take longer: on a CRS112 a
