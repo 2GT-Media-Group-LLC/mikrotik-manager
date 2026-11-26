@@ -410,6 +410,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.10
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc9" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2553,6 +2564,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.10
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc9" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3747,6 +3769,8 @@ beta, sent a fix or reported a problem:</p>
 <li><a href="https://github.com/schmitt330">@schmitt330</a>: device tools on RouterOS 6.</li>
 <li><a href="https://github.com/orshih6">@orshih6</a>: a security report on the release workflow.</li>
 </ul>
+<h2 id="110-rc10">1.1.0-rc.10<a class="headerlink" href="#110-rc10" title="Permanent link">&para;</a></h2>
+<p>The fixes in 1.0.38 below; update as soon as you can.</p>
 <h2 id="110-rc9">1.1.0-rc.9<a class="headerlink" href="#110-rc9" title="Permanent link">&para;</a></h2>
 <p>The fixes in 1.0.37 below, and one for 1.1:</p>
 <ul>
@@ -4931,6 +4955,32 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1038">1.0.38<a class="headerlink" href="#1038" title="Permanent link">&para;</a></h2>
+<p>Released on Thursday 26 November 2026. A security fix, reported by <a href="https://github.com/judahrand">@judahrand</a>;
+update as soon as you can. And one topology fix.</p>
+<ul>
+<li><strong>Firmware and wireless pages keep to the account's role and sites</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-mcr6-fpx6-h5p9">GHSA-mcr6-fpx6-h5p9</a>).</li>
+<li>Starting a rollout needs what creating it does: admin on every device in it when it holds
+    post-upgrade commands, operator otherwise. An operator could start a rollout an admin had
+    made, and so run its post-upgrade commands.</li>
+<li>A scheduled rollout is checked again when it comes due, against the account that scheduled
+    it as that account is now. One that has since lost access to its devices, or was removed,
+    no longer upgrades them: the rollout is cancelled with the reason on each device. Rollouts
+    scheduled before this release have no account recorded and run as before.</li>
+<li>A firmware mirror is managed by the site its package server is in now, not the site it was
+    set up in, and only clients in a site you administer are reconfigured. A device moved to
+    another site could still be changed from the one it left.</li>
+<li><strong>Wireless → RF</strong> TX quality, with no device chosen, showed every device in the fleet to an
+    account limited to some sites. It shows that account's sites only.</li>
+<li><strong>CAPsMAN</strong> under a controller showed a CAP's name, status and interfaces even when the CAP
+    was in a site the account can't see.</li>
+<li><strong>Two RouterOS 6 devices on a wireless link are joined on the topology map.</strong> RouterOS 6
+  doesn't report a bridge id, only its MAC, so a v6 bridge never matched the device below it.
+  The id is now built from the bridge's priority and MAC. Thanks to
+  <a href="https://github.com/Chillwifi-dev">@Chillwifi-dev</a> for the report
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/507">discussion #507</a>).</li>
+</ul>
 <h2 id="1037">1.0.37<a class="headerlink" href="#1037" title="Permanent link">&para;</a></h2>
 <p>Released on Thursday 26 November 2026. Two fixes: duplicate addresses and RouterOS 6 on the topology map.</p>
 <ul>
