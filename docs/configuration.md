@@ -93,8 +93,15 @@ default credentials only until then. An existing install still using admin/admin
 the same prompt at its next login.
 
 To sign in immediately with your own password on a fresh database, set
-`INITIAL_ADMIN_PASSWORD` in the backend environment. Use the password policy above.
-An empty or invalid value stops the first startup.
+either `INITIAL_ADMIN_PASSWORD` or `INITIAL_ADMIN_PASSWORD_FILE` in the backend environment.
+Use the password policy above. Setting both variables, pointing to an unreadable file,
+or supplying an empty or invalid password stops the first startup.
+
+For Kubernetes, mount a Secret as a read-only volume in the backend container. For example,
+mount it at `/run/secrets/bootstrap` with a key named `admin-password`, then set
+`INITIAL_ADMIN_PASSWORD_FILE=/run/secrets/bootstrap/admin-password` in the backend
+container's environment. The backend reads the file as UTF-8 and removes one final
+LF or CRLF if present. Spaces and other characters are preserved.
 
 For Compose, put your password in `.env` between single quotes so Compose preserves
 literal `$` characters and any leading or trailing spaces. Replace the example value
@@ -116,9 +123,10 @@ services:
 Start with `docker compose -f docker-compose.yml -f compose.bootstrap.yml up -d`
 (use `docker-compose.ghcr.yml` in place of `docker-compose.yml` for prebuilt images).
 
-The backend reads this setting only when creating the first admin account. Once that
-account exists, you can remove the password from `.env` and start Compose without the
-override. Change the password in the app to rotate it.
+The backend reads these settings only when creating the first admin account. Once that
+account exists, you can remove the Kubernetes Secret mount and its environment variable,
+or remove the password from `.env` and start Compose without the override. Change the
+password in the app to rotate it.
 
 ## Time display
 

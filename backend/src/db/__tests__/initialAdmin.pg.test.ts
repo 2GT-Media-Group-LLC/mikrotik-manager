@@ -1,5 +1,5 @@
 import express from 'express';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from 'pg';
@@ -38,6 +38,7 @@ suite('initial admin password (Postgres)', () => {
     process.env = { ...originalEnv, DATABASE_URL: url.toString(), SECRETS_DIR: dir, PASSWORD_LOGIN: 'true' };
     delete process.env.DB_PASSWORD;
     delete process.env.INITIAL_ADMIN_PASSWORD;
+    delete process.env.INITIAL_ADMIN_PASSWORD_FILE;
     db = require('../../config/database');
     ({ runMigrations } = require('../migrate'));
     app = express();
@@ -48,6 +49,7 @@ suite('initial admin password (Postgres)', () => {
 
   beforeEach(async () => {
     delete process.env.INITIAL_ADMIN_PASSWORD;
+    delete process.env.INITIAL_ADMIN_PASSWORD_FILE;
     await db.query('DELETE FROM users');
   });
 
@@ -92,6 +94,42 @@ suite('initial admin password (Postgres)', () => {
     process.env.INITIAL_ADMIN_PASSWORD = password;
     await expect(runMigrations()).rejects.toHaveProperty('message',
       'Invalid INITIAL_ADMIN_PASSWORD: Password must be at least 10 characters long');
+    expect(await db.query('SELECT id FROM users')).toEqual([]);
+  });
+
+  it.each(['', '\n', '\r\n'])('accepts a mounted password file (line ending %#)', async (lineEnding) => {
+    const password = ' test-file-bootstrap-42 ';
+    const file = join(dir, 'initial-admin-password');
+    await writeFile(file, password + lineEnding);
+    process.env.INITIAL_ADMIN_PASSWORD_FILE = file;
+    const { body } = await loginAfterMigration(password);
+    expect(body.user.must_change_password).toBe(false);
+
+    await rm(file);
+    await loginAfterMigration(password);
+  });
+
+  it('rejects both settings even if the direct password is empty', async () => {
+    process.env.INITIAL_ADMIN_PASSWORD = '';
+    process.env.INITIAL_ADMIN_PASSWORD_FILE = join(dir, 'initial-admin-password');
+    await expect(runMigrations()).rejects.toThrow(
+      'Set only one of INITIAL_ADMIN_PASSWORD and INITIAL_ADMIN_PASSWORD_FILE');
+    expect(await db.query('SELECT id FROM users')).toEqual([]);
+  });
+
+  it('rejects a missing password file without logging its path', async () => {
+    process.env.INITIAL_ADMIN_PASSWORD_FILE = join(dir, 'missing-password-file');
+    await expect(runMigrations()).rejects.toHaveProperty('message',
+      'Could not read the file specified by INITIAL_ADMIN_PASSWORD_FILE');
+    expect(await db.query('SELECT id FROM users')).toEqual([]);
+  });
+
+  it.each(['\n', 'hide1'])('rejects an invalid password file with a redacted error (%#)', async (contents) => {
+    const file = join(dir, 'invalid-initial-admin-password');
+    await writeFile(file, contents);
+    process.env.INITIAL_ADMIN_PASSWORD_FILE = file;
+    await expect(runMigrations()).rejects.toHaveProperty('message',
+      'Invalid INITIAL_ADMIN_PASSWORD_FILE: Password must be at least 10 characters long');
     expect(await db.query('SELECT id FROM users')).toEqual([]);
   });
 
