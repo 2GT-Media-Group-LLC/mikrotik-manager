@@ -27,6 +27,7 @@ Set in `.env` at the project root. Changing any of these requires a container re
 | `BIND_ADDRESS` | *every interface* | Host address the web UI is published on. See [Network exposure](#network-exposure). |
 | `NETFLOW_BIND_ADDRESS` | *every interface* | Host address the NetFlow collector (UDP 2055) is published on. |
 | `TLS_MODE` | `https` | `proxy` when your own reverse proxy terminates TLS. See [Behind a reverse proxy](#behind-a-reverse-proxy). |
+| `BACKEND_UPSTREAM` | `backend:3001` | Internal backend address nginx uses for API requests and live updates. |
 | `TRUSTED_PROXIES` | *none* | Your reverse proxy's address or range, so the client address it forwards is believed. |
 
 > Never commit `.env`. It is already listed in `.gitignore`.
@@ -377,12 +378,33 @@ Then `docker compose up -d`.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `TLS_MODE` | `https` | `proxy` serves the app over plain HTTP on `HTTP_PORT` instead of redirecting it to HTTPS. HTTPS on `HTTPS_PORT` keeps working with the manager's own certificate. |
+| `TLS_MODE` | `https` | `proxy` serves only plain HTTP on `HTTP_PORT`. The reverse proxy owns HTTPS and certificate management. |
 | `TRUSTED_PROXIES` | *none* | Your proxy's address or range (CIDR), comma-separated, IPv4 or IPv6. Only requests from these addresses may say who the client is (`X-Forwarded-For`) and that the browser used HTTPS (`X-Forwarded-Proto`). |
 | `CORS_ORIGIN` | | The address people type in the browser, as the proxy serves it. The browser sends it with every request, and the API refuses origins not on the list. |
 
 Point the proxy at `http://<manager host>:<HTTP_PORT>`, and turn on WebSocket support: live
 updates and the device terminal run over `/socket.io/`.
+
+If the backend service has a different name or port, set `BACKEND_UPSTREAM` on nginx.
+Use a hostname or IPv4 address with a port, such as `mtm-api:3001`, or a bracketed
+IPv6 address with a port, such as `[2001:db8::10]:3001`. nginx resolves the address
+when it loads its configuration.
+
+For separate containers, set `TLS_MODE=proxy` on both nginx and the backend.
+nginx starts without a certificate mount. **Settings → Certificate** directs you to
+your reverse proxy. The existing certificate volume can be reused if you switch
+back to `TLS_MODE=https`.
+
+The base Compose file declares both host port mappings. If your proxy needs the
+same host's port 443, use a Compose override to publish only the HTTP port. This
+example is for a proxy running on the host. [Compose port overrides](https://docs.docker.com/reference/compose-file/merge/#replace-value)
+
+```yaml
+services:
+  nginx:
+    ports: !override
+      - "127.0.0.1:${HTTP_PORT:-80}:80"
+```
 
 Give the proxy a read timeout of at least 300 seconds (the same as the manager's own). Many
 proxies default to 60, and a protected change on a slow device can take longer: on a CRS112 a
@@ -396,8 +418,8 @@ requests, such as a protected change on a slow device or a large backup, still n
 to wait; behind Cloudflare, make those from an address that reaches the manager directly.
 
 **Keep the plain HTTP port for the proxy only.** Anyone else who can reach it talks to the
-manager unencrypted. If the proxy runs on the same host, `BIND_ADDRESS=127.0.0.1` keeps both
-ports off the network; otherwise use one of the options in
+manager unencrypted. If the proxy runs on the same host, `BIND_ADDRESS=127.0.0.1` keeps the
+default port mappings off the network. For a proxy on another host, use one of the options in
 [Network exposure](#network-exposure).
 
 **Why `TRUSTED_PROXIES` matters.** Without it every request appears to come from the proxy:

@@ -2303,6 +2303,7 @@ export const settingsApi = {
 
 export interface CertInfo {
   exists: boolean;
+  managed_externally?: boolean;
   subject?: string;
   subject_full?: string;
   issuer?: string;

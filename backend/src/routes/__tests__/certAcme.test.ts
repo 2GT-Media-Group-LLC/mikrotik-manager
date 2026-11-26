@@ -45,12 +45,39 @@ describe('manager ACME settings', () => {
     delete process.env.ACME_DOMAIN;
     delete process.env.ACME_EMAIL;
     delete process.env.ACME_SERVER;
+    delete process.env.TLS_MODE;
     jest.mocked(readFile).mockRejectedValue(Object.assign(new Error('missing'), { code: 'ENOENT' }));
     jest.mocked(writeFile).mockResolvedValue(undefined);
     jest.mocked(rename).mockResolvedValue(undefined);
     jest.mocked(unlink).mockResolvedValue(undefined);
   });
   afterAll(() => { process.env = originalEnv; });
+
+  it('reports external web TLS without reading the local certificate', async () => {
+    process.env.TLS_MODE = 'proxy';
+
+    await request(app()).get('/api/cert').expect(401);
+    await request(app()).get('/api/cert').set('x-test-role', 'admin')
+      .expect(200, { exists: false, managed_externally: true });
+    expect(readFile).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['post', '/regenerate'],
+    ['post', '/upload'],
+    ['put', '/acme'],
+    ['delete', '/acme'],
+    ['put', '/acme/ca-bundle'],
+    ['delete', '/acme/ca-bundle'],
+  ] as const)('blocks %s %s when the reverse proxy manages web TLS', async (method, path) => {
+    process.env.TLS_MODE = 'proxy';
+
+    await request(app())[method](`/api/cert${path}`).set('x-test-role', 'operator').expect(403);
+    await request(app())[method](`/api/cert${path}`).set('x-test-role', 'admin')
+      .expect(409, { error: 'The reverse proxy manages the web certificate.' });
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(unlink).not.toHaveBeenCalled();
+  });
 
   it('lets an operator read the settings, and only an administrator change them', async () => {
     expect((await request(app()).get('/api/cert/acme')).status).toBe(401);

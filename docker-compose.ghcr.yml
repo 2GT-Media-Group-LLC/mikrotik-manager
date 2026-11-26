@@ -34,6 +34,7 @@ services:
       # proxy (address or CIDR) whose X-Forwarded-For / -Proto are believed.
       TLS_MODE: ${TLS_MODE:-https}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      BACKEND_UPSTREAM: ${BACKEND_UPSTREAM-backend:3001}
       # Optional HTTP-01 Let's Encrypt support; requires public DNS and port 80.
       ACME_DOMAIN: ${ACME_DOMAIN:-}
       ACME_EMAIL: ${ACME_EMAIL:-}
@@ -97,6 +98,7 @@ services:
       ACME_DOMAIN: ${ACME_DOMAIN:-}
       ACME_EMAIL: ${ACME_EMAIL:-}
       ACME_SERVER: ${ACME_SERVER:-}
+      TLS_MODE: ${TLS_MODE:-https}
       PORT: 3001
       NETFLOW_BIND_PORT: 2055
       # Poller tuning. These were documented in .env.example but never passed

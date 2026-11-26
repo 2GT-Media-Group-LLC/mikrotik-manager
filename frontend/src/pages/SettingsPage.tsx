@@ -272,7 +272,7 @@ export default function SettingsPage() {
   const { data: acmeSettings, isLoading: acmeLoading, error: acmeLoadError } = useQuery({
     queryKey: ['cert-acme'],
     queryFn: () => certApi.getAcme().then((r) => r.data),
-    enabled: activeTab === 'certificate' && settingsReader,
+    enabled: activeTab === 'certificate' && settingsReader && !!certInfo && !certInfo.managed_externally,
   });
   const [acmeForm, setAcmeForm] = useState({ domain: '', email: '', server: '' });
   const [acmeError, setAcmeError] = useState('');
@@ -1538,7 +1538,22 @@ export default function SettingsPage() {
       )}
 
       {/* ── Certificate ── */}
-      {activeTab === 'certificate' && (
+      {activeTab === 'certificate' && !certInfo && (
+        <div className="card p-5 max-w-2xl">
+          <p className="text-sm text-gray-500 dark:text-slate-400">
+            {certLoading ? 'Loading...' : 'Could not load web certificate settings.'}
+          </p>
+        </div>
+      )}
+      {activeTab === 'certificate' && certInfo?.managed_externally && (
+        <div className="card p-5 max-w-2xl">
+          <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Web Certificate</h3>
+          <p className="text-sm text-gray-500 dark:text-slate-400">
+            Your reverse proxy manages the HTTPS certificate. Make certificate changes there.
+          </p>
+        </div>
+      )}
+      {activeTab === 'certificate' && certInfo && !certInfo.managed_externally && (
         <div className="space-y-4 max-w-2xl">
           {/* Current cert info */}
           <div className="card p-5">
@@ -1546,9 +1561,7 @@ export default function SettingsPage() {
               <ShieldCheck className="w-4 h-4 text-blue-500" />
               Current Certificate
             </h3>
-            {certLoading ? (
-              <p className="text-sm text-gray-400">Loading...</p>
-            ) : !certInfo?.exists ? (
+            {!certInfo.exists ? (
               <p className="text-sm text-amber-500">No certificate found.</p>
             ) : (
               <div className="space-y-2">

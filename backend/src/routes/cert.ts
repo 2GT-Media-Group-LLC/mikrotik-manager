@@ -1,5 +1,6 @@
 import { parseCertificateBundle, parsePrivateKey } from '../utils/pemBundle';
 import { Router } from 'express';
+import type { RequestHandler } from 'express';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { readFile, writeFile, unlink, rename } from 'fs/promises';
@@ -10,6 +11,18 @@ import { requireAuth, requireAdmin, requireSettingsRead } from '../middleware/au
 
 const router = Router();
 router.use(requireAuth);
+
+function webTlsManagedExternally(): boolean {
+  return process.env.TLS_MODE === 'proxy';
+}
+
+const requireLocalWebTls: RequestHandler = (_req, res, next) => {
+  if (webTlsManagedExternally()) {
+    res.status(409).json({ error: 'The reverse proxy manages the web certificate.' });
+    return;
+  }
+  next();
+};
 
 const execFileAsync = promisify(execFile);
 
@@ -120,12 +133,12 @@ function acquireInstallLock(): Promise<() => void> {
 const RELOAD_SIGNAL = path.join(CERTS_DIR, '.reload');
 
 // GET /api/cert/acme — ACME settings for the manager's HTTPS certificate
-router.get('/acme', requireSettingsRead, async (_req, res) => {
+router.get('/acme', requireSettingsRead, requireLocalWebTls, async (_req, res) => {
   res.json(await readAcmeSettings());
 });
 
 // GET /api/cert/acme/status — last completed Certbot attempt
-router.get('/acme/status', requireSettingsRead, async (_req, res) => {
+router.get('/acme/status', requireSettingsRead, requireLocalWebTls, async (_req, res) => {
   const settings = await readAcmeSettings();
   if (!settings.domain.trim()) return res.json({ lastAttempt: null });
   let contents: string;
@@ -145,7 +158,7 @@ router.get('/acme/status', requireSettingsRead, async (_req, res) => {
 });
 
 // PUT /api/cert/acme — persist settings in the shared certificate volume
-router.put('/acme', requireAdmin, async (req, res) => {
+router.put('/acme', requireAdmin, requireLocalWebTls, async (req, res) => {
   if (acmeEnvironmentLocked()) {
     return res.status(409).json({ error: 'ACME settings are read-only while all three ACME environment variables are set.' });
   }
@@ -156,7 +169,7 @@ router.put('/acme', requireAdmin, async (req, res) => {
 });
 
 // DELETE /api/cert/acme — return to the deployment's environment variables
-router.delete('/acme', requireAdmin, async (_req, res) => {
+router.delete('/acme', requireAdmin, requireLocalWebTls, async (_req, res) => {
   if (acmeEnvironmentLocked()) {
     return res.status(409).json({ error: 'ACME settings are read-only while all three ACME environment variables are set.' });
   }
@@ -176,7 +189,7 @@ router.delete('/acme', requireAdmin, async (_req, res) => {
 });
 
 // GET /api/cert/acme/ca-bundle — whether a custom ACME trust bundle is installed
-router.get('/acme/ca-bundle', requireSettingsRead, async (_req, res) => {
+router.get('/acme/ca-bundle', requireSettingsRead, requireLocalWebTls, async (_req, res) => {
   try {
     await readFile(ACME_CA_BUNDLE_PATH);
     return res.json({ installed: true, readOnly: false });
@@ -189,7 +202,7 @@ router.get('/acme/ca-bundle', requireSettingsRead, async (_req, res) => {
 });
 
 // PUT /api/cert/acme/ca-bundle — install only validated PEM certificates
-router.put('/acme/ca-bundle', requireAdmin, async (req, res) => {
+router.put('/acme/ca-bundle', requireAdmin, requireLocalWebTls, async (req, res) => {
   const certificate = (req.body as { certificate?: unknown } | null)?.certificate;
   if (typeof certificate !== 'string' || Buffer.byteLength(certificate, 'utf8') > 1024 * 1024) {
     return res.status(400).json({ error: 'Provide a PEM certificate bundle no larger than 1 MB.' });
@@ -214,7 +227,7 @@ router.put('/acme/ca-bundle', requireAdmin, async (req, res) => {
 });
 
 // DELETE /api/cert/acme/ca-bundle — return to Certbot's default trust store
-router.delete('/acme/ca-bundle', requireAdmin, async (_req, res) => {
+router.delete('/acme/ca-bundle', requireAdmin, requireLocalWebTls, async (_req, res) => {
   try {
     await unlink(ACME_CA_BUNDLE_PATH);
   } catch (err) {
@@ -253,6 +266,9 @@ function parseCertInfo(pem: string) {
 
 // GET /api/cert — current certificate info
 router.get('/', async (_req, res) => {
+  if (webTlsManagedExternally()) {
+    return res.json({ exists: false, managed_externally: true });
+  }
   if (!existsSync(CERT_PATH)) {
     return res.json({ exists: false });
   }
@@ -265,7 +281,7 @@ router.get('/', async (_req, res) => {
 });
 
 // POST /api/cert/regenerate — generate a fresh self-signed certificate
-router.post('/regenerate', requireAdmin, async (_req, res) => {
+router.post('/regenerate', requireAdmin, requireLocalWebTls, async (_req, res) => {
   // Same lock as upload, so a regenerate can't interleave with an upload.
   const release = await acquireInstallLock();
   try {
@@ -292,7 +308,7 @@ router.post('/regenerate', requireAdmin, async (_req, res) => {
 });
 
 // POST /api/cert/upload — install a custom certificate and private key
-router.post('/upload', requireAdmin, async (req, res) => {
+router.post('/upload', requireAdmin, requireLocalWebTls, async (req, res) => {
   const { certificate, private_key } = req.body as { certificate?: string; private_key?: string };
 
   if (!certificate || !private_key) {

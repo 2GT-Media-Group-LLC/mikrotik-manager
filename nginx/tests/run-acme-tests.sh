@@ -27,8 +27,12 @@ done
 # /stub (Docker's tmpfs mounts are noexec unless asked), and the run is capped
 # so a real nginx starting by mistake can't hang CI.
 for tls in https proxy; do
+    set --
+    if [ "$tls" = https ]; then
+        set -- --tmpfs /certs
+    fi
     out=$(docker run --rm --memory 256m --cpus 1 --read-only \
-        --tmpfs /var/cache/nginx --tmpfs /var/run --tmpfs /tmp --tmpfs /certs --tmpfs /stub:exec \
+        --tmpfs /var/cache/nginx --tmpfs /var/run --tmpfs /tmp --tmpfs /stub:exec "$@" \
         -e TLS_MODE=$tls -v "$ROOT:/source:ro" --entrypoint sh "$IMAGE" -c \
         'printf "#!/bin/sh\necho NGINX-STARTED\n" > /stub/nginx && chmod +x /stub/nginx && PATH=/stub:$PATH timeout 60 sh /source/nginx/entrypoint.sh' 2>&1) || true
     if ! printf '%s\n' "$out" | grep -q NGINX-STARTED; then
