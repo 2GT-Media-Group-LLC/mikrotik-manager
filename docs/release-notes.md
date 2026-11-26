@@ -7,6 +7,33 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.38
+
+Released on Thursday 26 November 2026. A security fix, reported by [@judahrand](https://github.com/judahrand);
+update as soon as you can. And one topology fix.
+
+- **Firmware and wireless pages keep to the account's role and sites**
+  ([GHSA-mcr6-fpx6-h5p9](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-mcr6-fpx6-h5p9)).
+  - Starting a rollout needs what creating it does: admin on every device in it when it holds
+    post-upgrade commands, operator otherwise. An operator could start a rollout an admin had
+    made, and so run its post-upgrade commands.
+  - A scheduled rollout is checked again when it comes due, against the account that scheduled
+    it as that account is now. One that has since lost access to its devices, or was removed,
+    no longer upgrades them: the rollout is cancelled with the reason on each device. Rollouts
+    scheduled before this release have no account recorded and run as before.
+  - A firmware mirror is managed by the site its package server is in now, not the site it was
+    set up in, and only clients in a site you administer are reconfigured. A device moved to
+    another site could still be changed from the one it left.
+  - **Wireless → RF** TX quality, with no device chosen, showed every device in the fleet to an
+    account limited to some sites. It shows that account's sites only.
+  - **CAPsMAN** under a controller showed a CAP's name, status and interfaces even when the CAP
+    was in a site the account can't see.
+- **Two RouterOS 6 devices on a wireless link are joined on the topology map.** RouterOS 6
+  doesn't report a bridge id, only its MAC, so a v6 bridge never matched the device below it.
+  The id is now built from the bridge's priority and MAC. Thanks to
+  [@Chillwifi-dev](https://github.com/Chillwifi-dev) for the report
+  ([discussion #507](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/507)).
+
 ## 1.0.37
 
 Released on Thursday 26 November 2026. Two fixes: duplicate addresses and RouterOS 6 on the topology map.
