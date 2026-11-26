@@ -144,7 +144,7 @@ import { recordOptics } from '../opticLevels';
 import { routeOf } from '../jumpHosts';
 import { firewallMenu, type FirewallFamily } from '../../utils/firewallFamily';
 import { smsMessages, messagesFrom, SMS_ID, type SmsMessage } from '../../utils/lteSms';
-import { portMonitorDesignated } from '../../utils/stpUpstream';
+import { portMonitorDesignated, bridgeIdOf } from '../../utils/stpUpstream';
 
 /** The device tables the bridge-port checks read (#258). */
 export interface BridgeState {
@@ -2447,7 +2447,7 @@ export class DeviceCollector {
              protocol_mode = EXCLUDED.protocol_mode, designated_bridge_id = EXCLUDED.designated_bridge_id,
              designated_port_id = EXCLUDED.designated_port_id, designated_cost = EXCLUDED.designated_cost, updated_at = NOW()`,
           [
-            this.device.id, name, m['bridge-id'] || null,
+            this.device.id, name, bridgeIdOf(m, bridge),
             m['root-bridge'] === 'true',
             m['root-bridge-id'] || null,
             m['root-port'] || null,

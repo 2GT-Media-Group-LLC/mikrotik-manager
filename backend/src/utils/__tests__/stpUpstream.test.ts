@@ -1,5 +1,5 @@
 import {
-  resolveStpUpstreams, upstreamByDevice, portMonitorDesignated, type StpBridge, type StpLink,
+  resolveStpUpstreams, upstreamByDevice, portMonitorDesignated, bridgeIdOf, type StpBridge, type StpLink,
 } from '../stpUpstream';
 
 /**
@@ -340,5 +340,33 @@ describe('portMonitorDesignated (D507)', () => {
     ];
     const sxt = resolveStpUpstreams(bridges, []).find((v) => v.deviceId === 3);
     expect(sxt).toMatchObject({ upstreamDeviceId: 2, confidence: 'resolved', method: 'designated' });
+  });
+});
+
+describe('bridgeIdOf (D507)', () => {
+  it('keeps the id RouterOS 7 reports', () => {
+    expect(bridgeIdOf({ 'bridge-id': '0x8000.D0:EA:11:2C:00:01' }, { priority: '0x8000' })).toBe('0x8000.D0:EA:11:2C:00:01');
+  });
+
+  it('builds the id from the priority and MAC on RouterOS 6', () => {
+    expect(bridgeIdOf({ 'current-mac-address': 'd0:ea:11:2c:00:01' }, { priority: '0x8000' })).toBe('0x8000.D0:EA:11:2C:00:01');
+    expect(bridgeIdOf({ 'current-mac-address': '64:D1:54:00:00:03' }, { priority: '0x1000' })).toBe('0x1000.64:D1:54:00:00:03');
+    expect(bridgeIdOf({ 'current-mac-address': '64:D1:54:00:00:03' }, {})).toBe('0x8000.64:D1:54:00:00:03');
+  });
+
+  it('gives null without a usable MAC', () => {
+    expect(bridgeIdOf({}, { priority: '0x8000' })).toBeNull();
+    expect(bridgeIdOf({ 'current-mac-address': 'not-a-mac' }, {})).toBeNull();
+  });
+
+  it('joins two RouterOS 6 SXTs on a wireless link', () => {
+    const ptp1Id = bridgeIdOf({ 'current-mac-address': '64:D1:54:00:00:01' }, { priority: '0x8000' });
+    const ptp2Designated = portMonitorDesignated({ role: 'root-port', 'designated-bridge': '0x8000.64:D1:54:00:00:01' });
+    const bridges: StpBridge[] = [
+      { device_id: 1, bridge_name: 'bridge1', bridge_id: ptp1Id, root_bridge: false, root_bridge_id: '0x1000.D0:EA:11:0A:00:01', root_port: 'ether1', root_path_cost: 200030 },
+      { device_id: 2, bridge_name: 'bridge1', bridge_id: '0x8000.64:D1:54:00:00:02', root_bridge: false, root_bridge_id: '0x1000.D0:EA:11:0A:00:01', root_port: 'wlan1', root_path_cost: 200040, designated_bridge_id: ptp2Designated.bridgeId },
+    ];
+    expect(resolveStpUpstreams(bridges, []).find((v) => v.deviceId === 2))
+      .toMatchObject({ upstreamDeviceId: 1, confidence: 'resolved', method: 'designated' });
   });
 });
