@@ -268,6 +268,15 @@ beta, sent a fix or reported a problem:
 - [@schmitt330](https://github.com/schmitt330): device tools on RouterOS 6.
 - [@orshih6](https://github.com/orshih6): a security report on the release workflow.
 
+## 1.1.0-rc.9
+
+The fixes in 1.0.37 below, and one for 1.1:
+
+- **The SMS inbox shows its count straight away.** The inbox on the LTE tab was read only when
+  you clicked **Show**, so its header gave no count until then. It's read when the tab opens;
+  the messages stay folded until you click. Thanks to [@trackersoft](https://github.com/trackersoft)
+  (Stanley) for the report ([discussion #85](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/85)).
+
 ## 1.1.0-rc.8
 
 The fix in 1.0.36 below.
@@ -1498,6 +1507,24 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.37
+
+Released on Thursday 26 November 2026. Two fixes: duplicate addresses and RouterOS 6 on the topology map.
+
+- **Duplicate addresses are checked per VRF, and point-to-point addresses are left alone.** The
+  configuration audit warned about the same address on two interfaces even when they were in
+  different VRFs, or on point-to-point links (a /32 whose network is the far end, MikroTik's
+  equivalent of IP unnumbered). It now groups addresses by VRF, from `/ip/vrf` on RouterOS 7
+  and `/ip/route/vrf` on RouterOS 6, and skips a /32 whose network differs from the address.
+  The same loopback on two interfaces is still flagged. Thanks to
+  [@eskyuu](https://github.com/eskyuu) (Steven) for the pull request
+  ([#490](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/490)).
+- **A RouterOS 6 device gets its spanning-tree link on the topology map.** RouterOS 6 names the
+  bridge at the far end of a root port `designated-bridge`, where RouterOS 7 says
+  `designated-bridge-id`, and only the v7 name was read, so a v6 device with a valid root port
+  showed "No known connections". Thanks to [@Chillwifi-dev](https://github.com/Chillwifi-dev)
+  for the report and the prints ([discussion #507](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/507)).
 
 ## 1.0.36
 
