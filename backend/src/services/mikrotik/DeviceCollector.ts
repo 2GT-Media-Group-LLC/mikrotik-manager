@@ -127,6 +127,7 @@ import { parseRateBps } from '../../utils/wifiRate';
 import { probeUserManager, USER_MANAGER_RECHECK_MS } from '../userManager';
 import { poolSize, usedPerPool } from '../../utils/dhcpPools';
 import { recordOptics } from '../opticLevels';
+import { portMonitorDesignated } from '../../utils/stpUpstream';
 
 /** The device tables the bridge-port checks read (#258). */
 export interface BridgeState {
@@ -2000,8 +2001,8 @@ export class DeviceCollector {
             m['root-port'] || null,
             Number.isFinite(cost) ? cost : null,
             bridge['protocol-mode'] || null,
-            designated['designated-bridge-id'] || null,
-            designated['designated-port-id'] || null,
+            portMonitorDesignated(designated).bridgeId,
+            portMonitorDesignated(designated).portId,
             Number.isFinite(dCost) ? dCost : null,
           ]
         );
