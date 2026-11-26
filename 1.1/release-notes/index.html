@@ -410,6 +410,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.9
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc8" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2542,6 +2553,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.9
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc8" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3725,6 +3747,14 @@ beta, sent a fix or reported a problem:</p>
 <li><a href="https://github.com/schmitt330">@schmitt330</a>: device tools on RouterOS 6.</li>
 <li><a href="https://github.com/orshih6">@orshih6</a>: a security report on the release workflow.</li>
 </ul>
+<h2 id="110-rc9">1.1.0-rc.9<a class="headerlink" href="#110-rc9" title="Permanent link">&para;</a></h2>
+<p>The fixes in 1.0.37 below, and one for 1.1:</p>
+<ul>
+<li><strong>The SMS inbox shows its count straight away.</strong> The inbox on the LTE tab was read only when
+  you clicked <strong>Show</strong>, so its header gave no count until then. It's read when the tab opens;
+  the messages stay folded until you click. Thanks to <a href="https://github.com/trackersoft">@trackersoft</a>
+  (Stanley) for the report (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/85">discussion #85</a>).</li>
+</ul>
 <h2 id="110-rc8">1.1.0-rc.8<a class="headerlink" href="#110-rc8" title="Permanent link">&para;</a></h2>
 <p>The fix in 1.0.36 below.</p>
 <h2 id="110-rc7">1.1.0-rc.7<a class="headerlink" href="#110-rc7" title="Permanent link">&para;</a></h2>
@@ -4901,6 +4931,23 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1037">1.0.37<a class="headerlink" href="#1037" title="Permanent link">&para;</a></h2>
+<p>Released on Thursday 26 November 2026. Two fixes: duplicate addresses and RouterOS 6 on the topology map.</p>
+<ul>
+<li><strong>Duplicate addresses are checked per VRF, and point-to-point addresses are left alone.</strong> The
+  configuration audit warned about the same address on two interfaces even when they were in
+  different VRFs, or on point-to-point links (a /32 whose network is the far end, MikroTik's
+  equivalent of IP unnumbered). It now groups addresses by VRF, from <code>/ip/vrf</code> on RouterOS 7
+  and <code>/ip/route/vrf</code> on RouterOS 6, and skips a /32 whose network differs from the address.
+  The same loopback on two interfaces is still flagged. Thanks to
+  <a href="https://github.com/eskyuu">@eskyuu</a> (Steven) for the pull request
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/490">#490</a>).</li>
+<li><strong>A RouterOS 6 device gets its spanning-tree link on the topology map.</strong> RouterOS 6 names the
+  bridge at the far end of a root port <code>designated-bridge</code>, where RouterOS 7 says
+  <code>designated-bridge-id</code>, and only the v7 name was read, so a v6 device with a valid root port
+  showed "No known connections". Thanks to <a href="https://github.com/Chillwifi-dev">@Chillwifi-dev</a>
+  for the report and the prints (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/507">discussion #507</a>).</li>
+</ul>
 <h2 id="1036">1.0.36<a class="headerlink" href="#1036" title="Permanent link">&para;</a></h2>
 <p>Released on Wednesday 25 November 2026. A fix for static routes.</p>
 <ul>
