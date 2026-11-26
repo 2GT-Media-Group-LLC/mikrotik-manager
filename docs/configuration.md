@@ -96,8 +96,15 @@ To sign in immediately with your own password on a fresh database, set
 `INITIAL_ADMIN_PASSWORD` in the backend environment. Use the password policy above.
 An empty or invalid value stops the first startup.
 
-For Compose, set the password in `.env` and pass it to the backend with an override file
-such as `compose.bootstrap.yml`:
+For Compose, put your password in `.env` between single quotes so Compose preserves
+literal `$` characters and any leading or trailing spaces. Replace the example value
+with your own password. [Compose `.env` syntax](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/#env-file-syntax)
+
+```dotenv
+INITIAL_ADMIN_PASSWORD=' example$Word42 '
+```
+
+Pass the password to the backend with an override file such as `compose.bootstrap.yml`.
 
 ```yaml
 services:
