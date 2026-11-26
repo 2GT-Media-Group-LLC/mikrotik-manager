@@ -12,7 +12,7 @@ import type { GuardDevice } from '../ChangeGuard';
 
 const device: GuardDevice = {
   id: 1, name: 'router', ip_address: '192.0.2.1', api_port: 8728,
-  api_username: 'admin', api_password_encrypted: 'enc',
+  api_username: 'admin', api_password_encrypted: 'enc', jump_host_id: null,
 };
 
 function installClient(version: string, vrfs: Record<string, string>[] | Error) {
