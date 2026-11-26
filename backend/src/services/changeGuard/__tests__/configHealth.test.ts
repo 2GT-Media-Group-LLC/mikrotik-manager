@@ -338,6 +338,198 @@ describe('auditConfig', () => {
       });
       expect(rules(snap)).toEqual(['duplicate-address']);
     });
+
+    const duplicates = (interfaces: string[], address = '10.0.0.1/24') =>
+      interfaces.map((iface) => ({ address, interface: iface }));
+    const findings = (snap: DeviceSnapshot) =>
+      auditConfig(snap, device).filter((f) => f.rule.startsWith('duplicate-address'));
+
+    it('excludes /32 addresses with a different network even when mixed with other prefixes', () => {
+      const snap = healthy({
+        addresses: [
+          { address: '10.0.0.1/32', network: '10.0.0.2', interface: 'ether9' },
+          ...duplicates(['ether10'], '10.0.0.1/24'),
+          { address: '10.0.0.2/32', network: '10.0.0.3', interface: 'ether11' },
+          { address: '10.0.0.2/32', network: '10.0.0.4', interface: 'ether12' },
+        ],
+      });
+      expect(findings(snap)).toEqual([]);
+    });
+
+    it('excludes prefixless addresses with a different network, but keeps other prefixes', () => {
+      const snap = healthy({
+        addresses: [
+          { address: '10.0.0.1', network: '10.0.0.2', interface: 'ether1' },
+          { address: '10.0.0.1', network: '10.0.0.3', interface: 'ether2' },
+          { address: '10.0.0.2', network: '10.0.0.3', interface: 'ether3' },
+          ...duplicates(['ether4'], '10.0.0.2/24'),
+          { address: '10.0.0.3', network: '10.0.0.4', interface: 'ether5' },
+          { address: '10.0.0.3/32', network: '10.0.0.4', interface: 'ether6' },
+          { address: '10.0.0.4/31', network: '10.0.0.5', interface: 'ether7' },
+          { address: '10.0.0.4/31', network: '10.0.0.5', interface: 'ether8' },
+        ],
+      });
+      expect(findings(snap)).toEqual([expect.objectContaining({
+        rule: 'duplicate-address', objects: ['10.0.0.4', 'ether7', 'ether8'],
+      })]);
+    });
+
+    it('checks /32 and prefixless addresses when the network equals the address or is missing', () => {
+      const snap = healthy({
+        addresses: [
+          { address: '10.0.0.1/32', network: '10.0.0.1', interface: 'ether1' },
+          { address: '10.0.0.1', network: '10.0.0.1', interface: 'ether2' },
+          { address: '10.0.0.1/32', interface: 'ether3' },
+          { address: '10.0.0.1', network: '', interface: 'ether4' },
+          { address: '10.0.0.1/32', network: '10.0.0.2', interface: 'ether5' },
+          { address: '10.0.0.2', interface: 'ether6' },
+          { address: '10.0.0.2/24', interface: 'ether7' },
+        ],
+      });
+      expect(findings(snap).map((f) => f.objects)).toEqual([
+        ['10.0.0.1', 'ether1', 'ether2', 'ether3', 'ether4'],
+        ['10.0.0.2', 'ether6', 'ether7'],
+      ]);
+    });
+
+    it('groups direct VRF members separately and preserves main fingerprints', () => {
+      const snap = healthy({
+        addresses: duplicates(['ether1', 'ether2', 'ether3', 'ether4', 'ether5']),
+        vrfs: [
+          { name: 'red', interfaces: 'ether1,ether2' },
+          { name: 'blue', interfaces: 'ether3' },
+          { name: 'main', interfaces: 'all' },
+        ],
+      });
+      const found = findings(snap);
+      expect(found.map((f) => f.fingerprint)).toEqual([
+        'duplicate-address:10.0.0.1:vrf:red', 'duplicate-address:10.0.0.1',
+      ]);
+      expect(found[0].objects).toEqual(['10.0.0.1', 'ether1', 'ether2']);
+      expect(found[1].objects).toEqual(['10.0.0.1', 'ether4', 'ether5']);
+      expect(found[0]).toEqual(expect.objectContaining({
+        title: expect.stringContaining('in VRF red'),
+        detail: expect.stringContaining('in VRF red'),
+        remediation: expect.stringContaining('in VRF red'),
+      }));
+      expect(found[1]).toEqual(expect.objectContaining({
+        title: expect.not.stringMatching(/in VRF/i),
+        detail: expect.not.stringMatching(/in VRF/i),
+        remediation: expect.not.stringMatching(/in VRF/i),
+      }));
+    });
+
+    it('checks interfaces without an explicit VRF against each other in main', () => {
+      const snap = healthy({
+        addresses: duplicates(['ether1', 'ether2', 'ether3', 'ether4']),
+        interfaceLists: [{ name: 'red-list' }],
+        interfaceListMembers: [{ list: 'red-list', interface: 'ether2' }],
+        vrfs: [{ name: 'red', interfaces: 'ether1,red-list' }],
+        vrfsRead: true,
+      });
+      expect(findings(snap).map((f) => ({
+        fingerprint: f.fingerprint, objects: f.objects,
+      }))).toEqual([
+        { fingerprint: 'duplicate-address:10.0.0.1:vrf:red', objects: ['10.0.0.1', 'ether1', 'ether2'] },
+        { fingerprint: 'duplicate-address:10.0.0.1', objects: ['10.0.0.1', 'ether3', 'ether4'] },
+      ]);
+    });
+
+    it('checks unassigned interfaces together when the VRF list is empty', () => {
+      const snap = healthy({ addresses: duplicates(['ether1', 'ether2']), vrfs: [], vrfsRead: true });
+      expect(findings(snap)).toEqual([expect.objectContaining({
+        rule: 'duplicate-address', severity: 'warning',
+        fingerprint: 'duplicate-address:10.0.0.1',
+        objects: ['10.0.0.1', 'ether1', 'ether2'],
+      })]);
+    });
+
+    it('honors VRF ordering, disabled entries and actual-interface', () => {
+      const snap = healthy({
+        addresses: [
+          { address: '10.0.0.1/24', interface: 'ether1', 'actual-interface': 'bridge' },
+          ...duplicates(['ether2']),
+        ],
+        vrfs: [
+          { name: 'disabled', interfaces: 'bridge', disabled: 'yes' },
+          { name: 'main', interfaces: 'all' },
+          { name: 'red', interfaces: 'bridge' },
+        ],
+      });
+      expect(findings(snap)[0].objects).toEqual(['10.0.0.1', 'bridge', 'ether2']);
+    });
+
+    it('expands interface lists with include, exclude and explicit members', () => {
+      const snap = healthy({
+        addresses: duplicates(['ether1', 'ether2', 'ether3', 'ether4']),
+        interfaceLists: [
+          { name: 'base' },
+          { name: 'exclude' },
+          { name: 'red-list', include: 'base', exclude: 'exclude' },
+        ],
+        interfaceListMembers: [
+          { list: 'base', interface: 'ether1' },
+          { list: 'base', interface: 'ether2' },
+          { list: 'base', interface: 'ether3' },
+          { list: 'exclude', interface: 'ether2' },
+          { list: 'exclude', interface: 'ether3' },
+          { list: 'red-list', interface: 'ether3' },
+          { list: 'red-list', interface: 'ether4', disabled: 'yes' },
+        ],
+        vrfs: [{ name: 'red', interfaces: 'red-list' }, { name: 'main', interfaces: 'all' }],
+      });
+      const found = findings(snap);
+      expect(found.map((f) => f.objects)).toEqual([
+        ['10.0.0.1', 'ether1', 'ether3'], ['10.0.0.1', 'ether2', 'ether4'],
+      ]);
+    });
+
+    it('handles built-in dynamic and static interface lists', () => {
+      const snap = healthy({
+        addresses: duplicates(['dyn1', 'dyn2', 'static1', 'static2']),
+        interfaces: [
+          { name: 'dyn1', dynamic: 'true' }, { name: 'dyn2', dynamic: 'yes' },
+          { name: 'static1' }, { name: 'static2', dynamic: 'false' },
+        ],
+        vrfs: [{ name: 'red', interfaces: 'dynamic' }, { name: 'main', interfaces: 'static' }],
+      });
+      expect(findings(snap).map((f) => f.objects)).toEqual([
+        ['10.0.0.1', 'dyn1', 'dyn2'], ['10.0.0.1', 'static1', 'static2'],
+      ]);
+    });
+
+    it('reports uncertainty rather than asserting a conflict when VRF data is unavailable', () => {
+      const snap = healthy({ addresses: duplicates(['ether1', 'ether2']), vrfsRead: false });
+      expect(findings(snap)).toEqual([expect.objectContaining({
+        rule: 'duplicate-address-vrf-unconfirmed', severity: 'info',
+        objects: ['10.0.0.1', 'ether1', 'ether2'],
+      })]);
+    });
+
+    it('reports uncertain list membership and still reports confirmed conflicts', () => {
+      const snap = healthy({
+        addresses: duplicates(['ether1', 'ether2', 'ether3']),
+        interfaceLists: [{ name: 'loop', include: 'loop' }],
+        interfaceListMembers: [
+          { list: 'loop', interface: 'ether1' }, { list: 'loop', interface: 'ether2' },
+        ],
+        vrfs: [{ name: 'red', interfaces: 'loop' }, { name: 'main', interfaces: 'all' }],
+      });
+      expect(findings(snap).map((f) => f.rule)).toEqual([
+        'duplicate-address', 'duplicate-address-vrf-unconfirmed',
+      ]);
+    });
+
+    it('ignores disabled and invalid addresses', () => {
+      const snap = healthy({
+        addresses: [
+          ...duplicates(['ether1']),
+          { address: '10.0.0.1/24', interface: 'ether2', disabled: 'yes' },
+          { address: '10.0.0.1/24', interface: 'ether3', invalid: 'true' },
+        ],
+      });
+      expect(findings(snap)).toEqual([]);
+    });
   });
 
   it('orders critical findings before warnings', () => {
