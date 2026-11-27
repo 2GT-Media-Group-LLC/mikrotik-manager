@@ -8,7 +8,6 @@ resources:
   - namespace.yaml
   - frontend-deployment.yaml
   - frontend-service.yaml
-  - frontend-pdb.yaml
   - backend-service.yaml
   - httproute.yaml
   - policies.yaml

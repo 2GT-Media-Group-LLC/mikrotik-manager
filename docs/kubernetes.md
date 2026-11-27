@@ -25,9 +25,8 @@ Pin the frontend and backend images to the same release tag in the kustomization
 kubectl apply -k k8s
 ```
 
-This creates the `mikrotik-manager` namespace, two frontend replicas, the
-frontend and backend Services, and a PodDisruptionBudget. Edit
-`k8s/kustomization.yaml` to pin the images:
+This creates the `mikrotik-manager` namespace, two frontend replicas, and the
+frontend and backend Services. Edit `k8s/kustomization.yaml` to pin the images:
 
 ```yaml
 images:
