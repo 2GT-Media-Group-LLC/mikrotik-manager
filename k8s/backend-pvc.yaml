@@ -1,5 +1,3 @@
-# Generated secrets and the local backup store. The backend runs one replica
-# with the Recreate strategy, so ReadWriteOnce is enough.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

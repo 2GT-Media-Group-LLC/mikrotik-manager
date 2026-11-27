@@ -1,5 +1,3 @@
-# The API Service. The backend Deployment itself is supplied by the operator;
-# its pod template must carry these labels and a container port named http.
 apiVersion: v1
 kind: Service
 metadata:

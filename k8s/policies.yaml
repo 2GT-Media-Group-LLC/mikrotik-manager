@@ -1,13 +1,5 @@
-# Envoy Gateway policy for the app route.
-#
-# LimitOnly raises the request-buffer limit without buffering the body, so the
-# 20 GB platform-backup restore still streams and WebSocket upgrades keep
-# working. (The default BufferAndLimit mode must not be used on /socket.io.)
-# streamIdleTimeout reclaims a dead live-update connection; Socket.IO's pings
-# keep a healthy one active.
-#
-# requestBuffer.mode: LimitOnly requires Envoy Gateway v1.10 or later. On an
-# earlier controller, drop this policy; Envoy streams request bodies by default.
+# LimitOnly keeps the 20 GB restore streaming and WebSocket upgrades working.
+# It requires Envoy Gateway v1.10+; do not use BufferAndLimit on /socket.io.
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:

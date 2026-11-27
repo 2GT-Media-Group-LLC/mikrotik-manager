@@ -1,6 +1,3 @@
-# The API, scheduler and poll workers. One replica because the backend owns
-# the schedule and background jobs; use Recreate so a replacement never runs
-# alongside the old pod on the same volumes.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

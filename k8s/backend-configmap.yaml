@@ -1,10 +1,3 @@
-# Non-secret backend configuration. Change the service addresses, CORS origin
-# and trusted-proxy range for your cluster before applying.
-#
-# Credentials (DB_PASSWORD, INFLUXDB_TOKEN and optionally REDIS_PASSWORD,
-# JWT_SECRET, ENCRYPTION_KEY) come from the mikrotik-manager-backend Secret;
-# see docs/kubernetes.md. JWT_SECRET and ENCRYPTION_KEY may be omitted and are
-# then generated into the /app/data volume on first start.
 apiVersion: v1
 kind: ConfigMap
 metadata:

@@ -1,5 +1,3 @@
-# The static SPA. TLS, API routing and WebSocket upgrades belong to the
-# Gateway; this pod serves files only.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -75,8 +73,6 @@ spec:
             timeoutSeconds: 2
             failureThreshold: 3
           volumeMounts:
-            # nginx writes its pid and temporary files here; the root
-            # filesystem stays read-only.
             - name: tmp
               mountPath: /tmp
       volumes:
