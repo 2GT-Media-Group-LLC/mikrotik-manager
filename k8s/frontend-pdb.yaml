@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mikrotik-manager-frontend
+  labels:
+    app.kubernetes.io/name: mikrotik-manager
+    app.kubernetes.io/component: frontend
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mikrotik-manager
+      app.kubernetes.io/component: frontend

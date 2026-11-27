@@ -94,14 +94,42 @@ frontend_image() {
   return $rc
 }
 
+# The reference manifests, rendered and checked against the Kubernetes schemas.
+# Prefer the local binaries: the pinned kustomize image is amd64 and crashes
+# under emulation on an arm64 host. CI runs it on amd64.
+k8s_manifests() {
+  local dir rc
+  dir="$(mktemp -d)"
+  if command -v kubectl >/dev/null 2>&1; then
+    kubectl kustomize k8s >"$dir/manifests.yaml" || rc=$?
+  else
+    docker run --rm -v "$ROOT:/work" -w /work \
+      registry.k8s.io/kustomize/kustomize@sha256:937e7832dc0b09288b1398399dadb97382a27bbc35bee8fdcac47c7de4fff14d \
+      build k8s >"$dir/manifests.yaml" || rc=$?
+  fi
+  if [ "${rc:-0}" -eq 0 ]; then
+    if command -v kubeconform >/dev/null 2>&1; then
+      kubeconform -strict -summary -ignore-missing-schemas "$dir/manifests.yaml" || rc=$?
+    else
+      docker run --rm -v "$dir:/work:ro" -w /work \
+        ghcr.io/yannh/kubeconform@sha256:85dbef6b4b312b99133decc9c6fc9495e9fc5f92293d4ff3b7e1b30f5611823c \
+        -strict -summary -ignore-missing-schemas manifests.yaml || rc=$?
+    fi
+  fi
+  rm -rf "$dir"
+  return "${rc:-0}"
+}
+
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   run "backend: Postgres tests"     backend  e2e_pg
   run "nginx: ACME entrypoint"      nginx    sh tests/run-acme-tests.sh
   run "frontend: image"             .        frontend_image
+  run "k8s: manifests"              .        k8s_manifests
 else
   printf '  %-34s%s\n' "backend: Postgres tests" "skipped (no Docker)"
   printf '  %-34s%s\n' "nginx: ACME entrypoint" "skipped (no Docker)"
   printf '  %-34s%s\n' "frontend: image" "skipped (no Docker)"
+  printf '  %-34s%s\n' "k8s: manifests" "skipped (no Docker)"
 fi
 run "frontend: lint"       frontend npm run lint
 run "frontend: type-check" frontend npx tsc --noEmit

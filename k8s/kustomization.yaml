@@ -1,0 +1,18 @@
+# See ../docs/kubernetes.md for the Gateway, storage and upgrade notes.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: mikrotik-manager
+
+resources:
+  - namespace.yaml
+  - frontend-deployment.yaml
+  - frontend-service.yaml
+  - frontend-pdb.yaml
+
+# Pin the frontend to a release tag, or override it when applying:
+#   kubectl apply -k k8s
+#   kustomize edit set image ghcr.io/2gt-media-group-llc/mikrotik-manager-frontend=...:1.1.0
+images:
+  - name: ghcr.io/2gt-media-group-llc/mikrotik-manager-frontend
+    newTag: latest
