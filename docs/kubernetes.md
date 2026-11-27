@@ -71,9 +71,6 @@ The reference route assumes:
   (`TLS_MODE=http`, issue #508 PR 1) hides the upload and regeneration controls;
   until it lands, leave that card alone. Device certificate management is
   unaffected.
-- **Envoy Gateway v1.10 or later** for `requestBuffer.mode: LimitOnly` in
-  `k8s/policies.yaml`. On an earlier controller, drop that policy; Envoy streams
-  request bodies by default.
 
 ### Routing and timeouts
 
@@ -89,14 +86,13 @@ The reference route assumes:
 
 The timeouts are explicit because Envoy's default is 15 seconds. A Change Guard
 run on a slow device, a device backup, and a platform restore all take longer.
-Platform restore also needs the `LimitOnly` request-buffer policy so the upload
-streams instead of being buffered.
+The Gateway does not buffer request bodies unless configured to, so the platform
+restore streams.
 
-Socket.IO is long-lived. The route disables the overall request timeout and the
-policy reclaims a stream after an hour without data; Socket.IO's pings keep a
-healthy connection active. The reference backend runs one replica. If you scale
-it, the Gateway needs session affinity for the WebSocket connections (or move
-live updates to a broadcasting design).
+Socket.IO is long-lived. The route disables the overall request timeout;
+Socket.IO's pings keep a healthy connection active. The reference backend runs
+one replica. If you scale it, the Gateway needs session affinity for the
+WebSocket connections (or move live updates to a broadcasting design).
 
 ## Trusted proxies
 

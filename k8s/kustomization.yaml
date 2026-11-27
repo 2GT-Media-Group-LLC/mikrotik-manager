@@ -12,7 +12,6 @@ resources:
   - backend-deployment.yaml
   - backend-service.yaml
   - httproute.yaml
-  - policies.yaml
 
 images:
   - name: ghcr.io/2gt-media-group-llc/mikrotik-manager-frontend
