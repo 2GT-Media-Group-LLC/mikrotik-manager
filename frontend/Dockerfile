@@ -20,6 +20,7 @@ FROM nginx/nginx-unprivileged:1.30-alpine@sha256:637c35e46af7bc0dd3d3bcf7162e004
 
 COPY --from=builder /frontend/dist /usr/share/nginx/html
 COPY default.conf /etc/nginx/conf.d/default.conf
+COPY static-app.conf /etc/nginx/static-app.conf
 
 # The image's entrypoint scripts edit /etc/nginx and worker settings at startup,
 # which needs a writable root filesystem. This configuration is complete, so
