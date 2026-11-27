@@ -268,6 +268,16 @@ beta, sent a fix or reported a problem:
 - [@schmitt330](https://github.com/schmitt330): device tools on RouterOS 6.
 - [@orshih6](https://github.com/orshih6): a security report on the release workflow.
 
+## 1.1.0-rc.11
+
+One fix for 1.1:
+
+- **Clients are saved in batches again.** The batch insert added in beta.47 for large networks
+  ([#442](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/442)) was refused by
+  Postgres on every poll, so every device's clients were saved one at a time instead and
+  Postgres logged an error each poll. No clients were lost. The batch works now, and if one
+  ever fails the backend log says so.
+
 ## 1.1.0-rc.10
 
 The fixes in 1.0.38 below; update as soon as you can.
