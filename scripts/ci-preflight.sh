@@ -83,12 +83,25 @@ e2e_pg() {
   docker rm -f "$name" >/dev/null 2>&1
   return $rc
 }
+
+# The static frontend image's SPA fallback, asset caching, 404 rule and headers.
+frontend_image() {
+  local tag="mtm-frontend-preflight-$$-$RANDOM"
+  docker build -q -t "$tag" frontend >/dev/null &&
+    sh frontend/tests/serve.sh "$tag"
+  local rc=$?
+  docker image rm -f "$tag" >/dev/null 2>&1
+  return $rc
+}
+
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   run "backend: Postgres tests"     backend  e2e_pg
   run "nginx: ACME entrypoint"      nginx    sh tests/run-acme-tests.sh
+  run "frontend: image"             .        frontend_image
 else
   printf '  %-34s%s\n' "backend: Postgres tests" "skipped (no Docker)"
   printf '  %-34s%s\n' "nginx: ACME entrypoint" "skipped (no Docker)"
+  printf '  %-34s%s\n' "frontend: image" "skipped (no Docker)"
 fi
 run "frontend: lint"       frontend npm run lint
 run "frontend: type-check" frontend npx tsc --noEmit

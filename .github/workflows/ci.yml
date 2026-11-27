@@ -68,6 +68,22 @@ jobs:
       - name: Build
         run: npm run build
 
+  # The static image is what Compose and Kubernetes serve. It has its own nginx
+  # rules (SPA fallback, immutable assets, 404 for missing assets, headers), so
+  # check the behaviour over HTTP rather than trusting the config to be read.
+  frontend-image:
+    name: Frontend image — SPA serving
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Build the image
+        run: docker build -t mtm-frontend:ci frontend
+
+      - name: Check SPA serving
+        run: sh frontend/tests/serve.sh mtm-frontend:ci
+
   backend:
     name: Backend — Lint, Type-check, Test & Build
     runs-on: ubuntu-latest
