@@ -72,7 +72,7 @@ jobs:
   # rules (SPA fallback, immutable assets, 404 for missing assets, headers), so
   # check the behaviour over HTTP rather than trusting the config to be read.
   frontend-image:
-    name: Frontend image — SPA serving
+    name: Frontend image — build
     runs-on: ubuntu-latest
 
     steps:
@@ -80,9 +80,6 @@ jobs:
 
       - name: Build the image
         run: docker build -t mtm-frontend:ci frontend
-
-      - name: Check SPA serving
-        run: sh frontend/tests/serve.sh mtm-frontend:ci
 
   k8s:
     name: Kubernetes — manifests

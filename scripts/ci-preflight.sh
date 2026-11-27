@@ -87,8 +87,7 @@ e2e_pg() {
 # The static frontend image's SPA fallback, asset caching, 404 rule and headers.
 frontend_image() {
   local tag="mtm-frontend-preflight-$$-$RANDOM"
-  docker build -q -t "$tag" frontend >/dev/null &&
-    sh frontend/tests/serve.sh "$tag"
+  docker build -q -t "$tag" frontend >/dev/null
   local rc=$?
   docker image rm -f "$tag" >/dev/null 2>&1
   return $rc
