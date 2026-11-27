@@ -59,6 +59,7 @@ nav:
   - Release notes: release-notes.md
   - Getting started:
       - Configuration: configuration.md
+      - Kubernetes: kubernetes.md
   - Operating:
       - Devices: devices.md
       - Clients: clients.md
