@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1039" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.39
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1038" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1896,6 +1907,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1039" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.39
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1038" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2411,6 +2433,20 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1039">1.0.39<a class="headerlink" href="#1039" title="Permanent link">&para;</a></h2>
+<p>Released on Friday 27 November 2026. Two fixes.</p>
+<ul>
+<li><strong>Polling recovers when Redis starts after the backend.</strong> After a host reboot Docker restarts
+  the containers in any order, so the backend could start before Redis. Polling, the scheduler and
+  live updates then stayed broken, with "Connection is closed", until the backend was restarted
+  by hand. The backend now waits for Redis before starting them, and its log says "Waiting for
+  Redis" until it answers. Thanks to <a href="https://github.com/Chillwifi-dev">@Chillwifi-dev</a> for the
+  report (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/507">discussion #507</a>).</li>
+<li><strong>OIDC sign-in works with providers that sign ID tokens with ES256</strong>, such as Kanidm
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/511">#511</a>). Sign-in expected
+  RS256 and failed with "unexpected JWT alg received". When the provider doesn't offer RS256, the
+  algorithm it does offer is used. Thanks to <a href="https://github.com/judahrand">@judahrand</a>.</li>
+</ul>
 <h2 id="1038">1.0.38<a class="headerlink" href="#1038" title="Permanent link">&para;</a></h2>
 <p>Released on Thursday 26 November 2026. A security fix, reported by <a href="https://github.com/judahrand">@judahrand</a>;
 update as soon as you can. And one topology fix.</p>
