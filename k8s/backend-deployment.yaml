@@ -50,10 +50,10 @@ spec:
             - secretRef:
                 name: mikrotik-manager-backend
           securityContext:
-            # arp-scan carries a file capability. no-new-privileges would stop
-            # it receiving NET_RAW, the same reason the Compose service omits
-            # it, so privilege escalation stays allowed for this container.
-            allowPrivilegeEscalation: true
+            # Only NET_RAW is granted, and it is already in the container's
+            # bounding/permitted set. No privilege escalation is needed:
+            # arp-scan uses the container capability directly.
+            allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop:

@@ -121,8 +121,8 @@ believes.
 - `/app/data` (generated secrets) and `/app/backups` are persistent claims. Size
   them for your fleet and set a storage class if the default is not the one you
   want.
-- The backend container runs read-only. Its `/tmp` is an emptyDir and it keeps
-  `NET_RAW` for server-side ARP discovery.
+- The backend container runs read-only. Its `/tmp` is an emptyDir and it has only
+  `NET_RAW` for server-side ARP discovery, with privilege escalation disabled.
 - **NetFlow** is UDP 2055 straight to the backend. The Gateway does not carry
   it; expose it with a UDP Service or a host port if you collect flows.
 - `CORS_ORIGIN` is in the backend ConfigMap. When the external-TLS mode
