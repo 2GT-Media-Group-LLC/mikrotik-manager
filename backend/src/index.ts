@@ -16,7 +16,7 @@ dotenv.config();
 
 import { pool, queryOne, query } from './config/database';
 import { initOuiDatabase } from './utils/oui';
-import { redis } from './config/redis';
+import { redis, waitForRedis } from './config/redis';
 import { runMigrations } from './db/migrate';
 import { startProxyBackfillsInBackground } from './services/ProxyBackfillService';
 import { errorHandler } from './middleware/errorHandler';
@@ -481,7 +481,7 @@ app.use(errorHandler);
  * secrets file it made is there to read.
  */
 async function startPollWorker(): Promise<void> {
-  await redis.connect().catch(() => console.warn('Redis connection warning'));
+  await waitForRedis();
   const poller = new PollerService();
   setSharedPollerService(poller);
   await poller.start();
@@ -568,8 +568,8 @@ async function start(): Promise<void> {
   ).then((r) => r[0]?.value !== false).catch(() => true);
   initOuiDatabase(ouiAllowed).catch(() => {});
 
-  // Connect Redis
-  await redis.connect().catch(() => console.warn('Redis connection warning'));
+  // Wait for Redis: queues made before it answers never recover (D507)
+  await waitForRedis();
 
   // Start poller
   const pollerService = new PollerService();
