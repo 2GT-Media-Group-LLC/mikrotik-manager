@@ -63,8 +63,12 @@ and both Services.
 
 The reference route assumes:
 
-- **Gateway API** `v1` and an existing `Gateway` with an HTTPS listener named
-  `https`. Remove `sectionName` to attach to every listener.
+- **Gateway API v1.2 or later**, and an existing `Gateway` with an HTTPS listener
+  named `https`. The route uses `HTTPRoute.rules[].timeouts`, which is Standard
+  since v1.2.0 but Extended support, so the implementation must advertise
+  `HTTPRouteRequestTimeout`; Envoy Gateway does. With older CRDs the field is
+  dropped and the Gateway's default timeout applies. Remove `sectionName` to
+  attach to every listener.
 - **cert-manager** (or your own certificate automation) on the Gateway. The
   manager's Settings → Certificate card manages the Compose nginx certificate;
   do not mount an application certificate volume here. The external-TLS mode
