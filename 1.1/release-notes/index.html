@@ -410,6 +410,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.11
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc10" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2564,6 +2575,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.11
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc10" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3768,6 +3790,15 @@ beta, sent a fix or reported a problem:</p>
   carrier's replies, and readable chart labels.</li>
 <li><a href="https://github.com/schmitt330">@schmitt330</a>: device tools on RouterOS 6.</li>
 <li><a href="https://github.com/orshih6">@orshih6</a>: a security report on the release workflow.</li>
+</ul>
+<h2 id="110-rc11">1.1.0-rc.11<a class="headerlink" href="#110-rc11" title="Permanent link">&para;</a></h2>
+<p>One fix for 1.1:</p>
+<ul>
+<li><strong>Clients are saved in batches again.</strong> The batch insert added in beta.47 for large networks
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/442">#442</a>) was refused by
+  Postgres on every poll, so every device's clients were saved one at a time instead and
+  Postgres logged an error each poll. No clients were lost. The batch works now, and if one
+  ever fails the backend log says so.</li>
 </ul>
 <h2 id="110-rc10">1.1.0-rc.10<a class="headerlink" href="#110-rc10" title="Permanent link">&para;</a></h2>
 <p>The fixes in 1.0.38 below; update as soon as you can.</p>
