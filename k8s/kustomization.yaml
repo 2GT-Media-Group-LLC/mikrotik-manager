@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: mikrotik-manager
+
+resources:
+  - namespace.yaml
+  - frontend-deployment.yaml
+  - frontend-service.yaml
+  - backend-configmap.yaml
+  - backend-pvc.yaml
+  - backend-deployment.yaml
+  - backend-service.yaml
+  - httproute.yaml
+
+images:
+  - name: ghcr.io/2gt-media-group-llc/mikrotik-manager-frontend
+    newTag: latest
+  - name: ghcr.io/2gt-media-group-llc/mikrotik-manager-backend
+    newTag: latest

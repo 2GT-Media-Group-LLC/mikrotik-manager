@@ -15,6 +15,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import { pool, queryOne, query } from './config/database';
+import { parseTrustedProxies } from './config/trustedProxies';
 import { initOuiDatabase } from './utils/oui';
 import { startAsnDatabase } from './utils/asnDatabase';
 import { redis } from './config/redis';
@@ -156,8 +157,28 @@ RouterOSClient.tlsVerifier = async (host, port, fingerprint, raw, jumpHostId) =>
 RouterOSClient.channelOpener = openForwardedChannel;
 
 const app = express();
-// nginx sits exactly one hop in front; trust its X-Forwarded-For so req.ip is the real client IP
-app.set('trust proxy', 1);
+// Compose's nginx sits exactly one hop in front, so the historical behaviour
+// trusts one hop. Behind a multi-hop proxy chain, name the proxies with
+// BACKEND_TRUSTED_PROXIES and only they may set the client address and scheme.
+// Parsing throws on a malformed entry, so a typo cannot silently widen what the
+// API believes.
+const trustedProxies = parseTrustedProxies(process.env.BACKEND_TRUSTED_PROXIES);
+app.set(
+  'trust proxy',
+  trustedProxies.enabled ? (address: string) => trustedProxies.matches(address) : 1
+);
+
+// Express uses the same trust rule for req.ip and req.secure; the Socket.IO
+// namespaces resolve their client address through this helper so the audit log
+// and rate limits agree with the HTTP side.
+function resolveClientIp(
+  forwardedFor: string | string[] | undefined,
+  peer: string | undefined
+): string {
+  return trustedProxies.enabled
+    ? trustedProxies.clientIp(forwardedFor, peer)
+    : clientIpBehindProxy(forwardedFor, peer);
+}
 // Express 5 parses query strings with Node's simple parser; keep the qs
 // parser Express 4 used, so `ids[]=1&ids[]=2` (axios' array form) and nested
 // keys still arrive as arrays and objects.
@@ -224,7 +245,7 @@ io.on('connection', (socket) => {
 const torchNs = attachTorch(io, {
   socketSession,
   roleOnDevice,
-  clientIp: (socket) => clientIpBehindProxy(socket.handshake.headers['x-forwarded-for'], socket.handshake.address),
+  clientIp: (socket) => resolveClientIp(socket.handshake.headers['x-forwarded-for'], socket.handshake.address),
 });
 
 // ─── SSH Terminal namespace ────────────────────────────────────────────────────
@@ -303,7 +324,7 @@ terminalNs.on('connection', (socket) => {
   let shellStream: ClientChannel | null = null;
   const user = socket.data.user as AuthPayload;
   // The user's address, not nginx's (P2-33).
-  const clientIp = clientIpBehindProxy(socket.handshake.headers['x-forwarded-for'], socket.handshake.address);
+  const clientIp = resolveClientIp(socket.handshake.headers['x-forwarded-for'], socket.handshake.address);
 
   socket.on('start', async (payload: { deviceId: number; cols?: number; rows?: number }) => {
     const { deviceId, cols = 80, rows = 24 } = payload;

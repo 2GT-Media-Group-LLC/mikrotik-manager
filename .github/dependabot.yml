@@ -51,6 +51,13 @@ updates:
       interval: "weekly"
       day: "monday"
 
+  - package-ecosystem: "docker"
+    directory: "/frontend"
+    target-branch: "dev"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+
   # Images in docker-compose.yml, pinned by digest (outside review O2).
   # Regenerate docker-compose.ghcr.yml in the same PR: npm run compose:generate.
   - package-ecosystem: "docker-compose"

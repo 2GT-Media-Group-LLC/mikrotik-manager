@@ -1,0 +1,66 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mikrotik-manager
+  labels:
+    app.kubernetes.io/name: mikrotik-manager
+spec:
+  parentRefs:
+    - name: eg
+      namespace: default
+      sectionName: https
+  hostnames:
+    - mtm.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/platform-backup
+      backendRefs:
+        - name: mikrotik-manager-backend
+          port: 3001
+      timeouts:
+        request: 3600s
+
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/backups
+      backendRefs:
+        - name: mikrotik-manager-backend
+          port: 3001
+      timeouts:
+        request: 660s
+
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+        - path:
+            type: Exact
+            value: /.well-known/oauth-protected-resource/api/mcp
+      backendRefs:
+        - name: mikrotik-manager-backend
+          port: 3001
+      timeouts:
+        request: 300s
+
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /socket.io
+      backendRefs:
+        - name: mikrotik-manager-backend
+          port: 3001
+      timeouts:
+        request: 0s
+
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: mikrotik-manager-frontend
+          port: 8080
+      timeouts:
+        request: 30s

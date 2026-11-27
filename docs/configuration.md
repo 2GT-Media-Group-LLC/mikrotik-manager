@@ -28,6 +28,7 @@ Set in `.env` at the project root. Changing any of these requires a container re
 | `NETFLOW_BIND_ADDRESS` | *every interface* | Host address the NetFlow collector (UDP 2055) is published on. |
 | `TLS_MODE` | `https` | `proxy` when your own reverse proxy terminates TLS. See [Behind a reverse proxy](#behind-a-reverse-proxy). |
 | `TRUSTED_PROXIES` | *none* | Your reverse proxy's address or range, so the client address it forwards is believed. |
+| `BACKEND_TRUSTED_PROXIES` | *unset (one hop)* | Addresses or CIDRs whose forwarded headers the API believes directly. Needed when a proxy reaches the API itself. |
 
 > Never commit `.env`. It is already listed in `.gitignore`.
 
@@ -379,6 +380,7 @@ Then `docker compose up -d`.
 |---|---|---|
 | `TLS_MODE` | `https` | `proxy` serves the app over plain HTTP on `HTTP_PORT` instead of redirecting it to HTTPS. HTTPS on `HTTPS_PORT` keeps working with the manager's own certificate. |
 | `TRUSTED_PROXIES` | *none* | Your proxy's address or range (CIDR), comma-separated, IPv4 or IPv6. Only requests from these addresses may say who the client is (`X-Forwarded-For`) and that the browser used HTTPS (`X-Forwarded-Proto`). |
+| `BACKEND_TRUSTED_PROXIES` | *unset (one hop)* | The same allowlist for requests that reach the API directly, such as through a multi-hop proxy chain. Only these peers' `X-Forwarded-*` headers are believed. |
 | `CORS_ORIGIN` | | The address people type in the browser, as the proxy serves it. The browser sends it with every request, and the API refuses origins not on the list. |
 
 Point the proxy at `http://<manager host>:<HTTP_PORT>`, and turn on WebSocket support: live
@@ -417,9 +419,19 @@ Audit Log**. A proxy on the same host usually arrives from the Docker network's 
 port. Its upstream is then `http://nginx:80`, and `TRUSTED_PROXIES` is the proxy container's
 address, or the network's range such as `172.18.0.0/16`.
 
+**Multi-hop proxies.** Compose's nginx is trusted as exactly one hop. When traffic reaches
+the backend through more than one proxy — a second proxy hop, a service mesh, or a load
+balancer that does not go through the nginx edge — set `BACKEND_TRUSTED_PROXIES` on the
+backend to the addresses or CIDR range of the proxy that connects to it, for example
+`BACKEND_TRUSTED_PROXIES=10.0.0.0/8`. The API walks the socket peer's forwarded chain from
+right to left and stops at the first address outside the list, so a client cannot claim an
+address by adding its own `X-Forwarded-For` entries. A malformed entry stops startup rather
+than silently widening what is believed.
+
 **SSO** builds its redirect address from the host and scheme the proxy forwards, so it works
-as long as `TRUSTED_PROXIES` is right. If your provider still rejects the callback, set
-**Public base URL** in the SSO settings (see [SSO](sso-oidc.md)).
+as long as `TRUSTED_PROXIES` (or `BACKEND_TRUSTED_PROXIES` on the direct path) is right. If
+your provider still rejects the callback, set **Public base URL** in the SSO settings (see
+[SSO](sso-oidc.md)).
 
 ### Examples
 

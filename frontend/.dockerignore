@@ -1,0 +1,9 @@
+# The frontend image is built with ./frontend as its context, so the root
+# .dockerignore does not apply. Without this, the checkout's own node_modules
+# and a stale dist would be copied over what the build just produced.
+node_modules
+dist
+coverage
+.env
+.env.*
+npm-debug.log*

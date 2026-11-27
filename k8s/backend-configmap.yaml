@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mikrotik-manager-backend
+  labels:
+    app.kubernetes.io/name: mikrotik-manager
+    app.kubernetes.io/component: backend
+data:
+  NODE_ENV: production
+  TZ: UTC
+  PORT: "3001"
+  NETFLOW_BIND_PORT: "2055"
+  POLLER_ROLE: all
+  TLS_MODE: http
+  CORS_ORIGIN: https://mtm.example.com
+  DATABASE_URL: postgresql://mikrotik@postgres:5432/mikrotik_manager
+  REDIS_URL: redis://redis:6379
+  INFLUXDB_URL: http://influxdb:8086
+  INFLUXDB_ORG: mikrotik-manager
+  INFLUXDB_BUCKET: metrics
