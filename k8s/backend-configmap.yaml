@@ -26,4 +26,3 @@ data:
   INFLUXDB_ORG: mikrotik-manager
   INFLUXDB_BUCKET: metrics
   BACKEND_TRUSTED_PROXIES: 10.244.0.0/16
-  OIDC_BOOTSTRAP_FILE: /etc/mikrotik-manager/oidc.json

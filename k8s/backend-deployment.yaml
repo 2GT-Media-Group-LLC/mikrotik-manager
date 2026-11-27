@@ -90,9 +90,6 @@ spec:
               mountPath: /app/backups
             - name: tmp
               mountPath: /tmp
-            - name: oidc
-              mountPath: /etc/mikrotik-manager
-              readOnly: true
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -102,7 +99,3 @@ spec:
             claimName: mikrotik-manager-backups
         - name: tmp
           emptyDir: {}
-        - name: oidc
-          secret:
-            secretName: mikrotik-manager-oidc
-            optional: true

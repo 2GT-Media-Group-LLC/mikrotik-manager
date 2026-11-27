@@ -128,9 +128,6 @@ believes.
 - `CORS_ORIGIN` is in the backend ConfigMap. When the external-TLS mode
   (`TLS_MODE=http`) is available, set it there too so the Settings UI shows that
   TLS is managed externally.
-- To import an OIDC configuration once, create the optional Secret
-  `mikrotik-manager-oidc` with key `oidc.json`; it is mounted read-only at
-  `/etc/mikrotik-manager/oidc.json`.
 
 ## Network policy
 
