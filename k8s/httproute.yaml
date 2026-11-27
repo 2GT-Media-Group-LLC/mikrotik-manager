@@ -14,26 +14,6 @@ spec:
   rules:
     - matches:
         - path:
-            type: Exact
-            value: /.well-known/oauth-protected-resource/api/mcp
-      backendRefs:
-        - name: mikrotik-manager-backend
-          port: 3001
-      timeouts:
-        request: 60s
-
-    - matches:
-        - path:
-            type: Exact
-            value: /api/mcp
-      backendRefs:
-        - name: mikrotik-manager-backend
-          port: 3001
-      timeouts:
-        request: 60s
-
-    - matches:
-        - path:
             type: PathPrefix
             value: /api/platform-backup
       backendRefs:
@@ -56,6 +36,9 @@ spec:
         - path:
             type: PathPrefix
             value: /api
+        - path:
+            type: Exact
+            value: /.well-known/oauth-protected-resource/api/mcp
       backendRefs:
         - name: mikrotik-manager-backend
           port: 3001

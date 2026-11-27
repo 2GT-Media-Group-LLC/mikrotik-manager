@@ -77,11 +77,10 @@ The reference route assumes:
 | Path | Backend | Request timeout |
 |---|---|---|
 | `/` | frontend:8080 | 30s |
-| `/api` | backend:3001 | 300s |
+| `/api` (including `/api/mcp`) | backend:3001 | 300s |
 | `/api/backups` | backend:3001 | 660s |
 | `/api/platform-backup` | backend:3001 | 3600s |
-| `/api/mcp` | backend:3001 | 60s |
-| `/.well-known/oauth-protected-resource/api/mcp` | backend:3001 | 60s |
+| `/.well-known/oauth-protected-resource/api/mcp` | backend:3001 | 300s |
 | `/socket.io` | backend:3001 | 0s (unbounded) |
 
 The timeouts are explicit because Envoy's default is 15 seconds. A Change Guard
