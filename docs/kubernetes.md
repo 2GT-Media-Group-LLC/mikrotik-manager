@@ -1,28 +1,28 @@
 # Kubernetes
 
-The reference manifests in [`k8s/`](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/tree/dev/k8s)
-run the frontend and backend Deployments, their Services, persistent claims and
-the Gateway route. PostgreSQL, Redis, InfluxDB and the credentials Secret are
-supplied by the operator, with the settings from [Configuration](configuration.md).
+The manifests in [`k8s/`](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/tree/dev/k8s)
+run the frontend and backend Deployments and the Gateway route. PostgreSQL,
+Redis and InfluxDB are yours, along with the backend credentials Secret.
 
-The frontend is an ordinary static Deployment. It does not terminate TLS, run
-ACME, proxy the API, or hold a certificate volume. In Compose those jobs belong
-to the nginx edge; in Kubernetes they belong to the Gateway and cert-manager.
+The Gateway handles TLS and routing. The frontend is just static files; there is
+no nginx edge container as in Compose.
 
-## Images
+## Before you start
 
-| Image | Purpose |
-|---|---|
-| `ghcr.io/2gt-media-group-llc/mikrotik-manager-frontend` | The SPA, nginx unprivileged on port 8080 |
-| `ghcr.io/2gt-media-group-llc/mikrotik-manager-backend` | The API, scheduler and poll workers on port 3001 |
+- **Gateway API v1.2 or later**, with an implementation that supports
+  `HTTPRouteRequestTimeout` (Envoy Gateway does). The route sets per-path
+  timeouts; older CRDs drop the field and the Gateway's default applies.
+- An existing `Gateway` with an HTTPS listener. The example points at `eg` in
+  the `default` namespace and an `https` listener; change those in
+  `k8s/httproute.yaml`.
+- TLS managed by the Gateway (cert-manager or your own). Do not mount the app
+  certificate volume; the Settings → Certificate card is for Compose. Until the
+  external-TLS mode lands, leave that card alone. Device certificates are
+  unaffected.
 
-The Gateway replaces the Compose nginx edge, so no edge image is deployed here.
-Pin the frontend and backend images to the same release tag in the kustomization.
+## Configure
 
-## Apply the deployment
-
-Create the namespace and the backend Secret first (skip the namespace if it
-already exists):
+Create the namespace and the backend credentials Secret:
 
 ```sh
 kubectl create namespace mikrotik-manager
@@ -31,14 +31,14 @@ kubectl -n mikrotik-manager create secret generic mikrotik-manager-backend \
   --from-literal=INFLUXDB_TOKEN='...'
 ```
 
-Add `REDIS_PASSWORD`, `JWT_SECRET` and `ENCRYPTION_KEY` to the same Secret if
-you pin them; otherwise the JWT and encryption keys are generated into
-`/app/data` on first start. `DB_PASSWORD` is combined with `DATABASE_URL`, and
-`INFLUXDB_TOKEN` is required.
+`DB_PASSWORD` is combined with `DATABASE_URL`; `INFLUXDB_TOKEN` is required.
+Add `REDIS_PASSWORD`, `JWT_SECRET` or `ENCRYPTION_KEY` to the same Secret if you
+want to pin them. Otherwise the JWT and encryption keys are generated into
+`/app/data` on first start.
 
 Edit `k8s/backend-configmap.yaml` for your database, Redis and InfluxDB
-addresses, `CORS_ORIGIN`, and the Gateway pod range for
-`BACKEND_TRUSTED_PROXIES`. Then pin both images in `k8s/kustomization.yaml`:
+addresses and `CORS_ORIGIN`. Then set the image tags in
+`k8s/kustomization.yaml` to the release you want:
 
 ```yaml
 images:
@@ -48,111 +48,85 @@ images:
     newTag: "1.1.0"
 ```
 
-Change the placeholders in `k8s/httproute.yaml`: the Gateway `parentRefs`, its
-`sectionName`, and the hostname. Then apply:
+Finally set the Gateway parent and hostname in `k8s/httproute.yaml`, then apply:
 
 ```sh
 kubectl apply -k k8s
 ```
 
-This creates two frontend replicas, the backend Deployment, the backend
-ConfigMap, the `mikrotik-manager-data` and `mikrotik-manager-backups` claims,
-and both Services.
+## Routing
 
-## Gateway
-
-The reference route assumes:
-
-- **Gateway API v1.2 or later**, and an existing `Gateway` with an HTTPS listener
-  named `https`. The route uses `HTTPRoute.rules[].timeouts`, which is Standard
-  since v1.2.0 but Extended support, so the implementation must advertise
-  `HTTPRouteRequestTimeout`; Envoy Gateway does. With older CRDs the field is
-  dropped and the Gateway's default timeout applies. Remove `sectionName` to
-  attach to every listener.
-- **cert-manager** (or your own certificate automation) on the Gateway. The
-  manager's Settings → Certificate card manages the Compose nginx certificate;
-  do not mount an application certificate volume here. The external-TLS mode
-  (`TLS_MODE=http`, issue #508 PR 1) hides the upload and regeneration controls;
-  until it lands, leave that card alone. Device certificate management is
-  unaffected.
-
-### Routing and timeouts
-
-| Path | Backend | Request timeout |
+| Path | Goes to | Timeout |
 |---|---|---|
 | `/` | frontend:8080 | 30s |
 | `/api` (including `/api/mcp`) | backend:3001 | 300s |
 | `/api/backups` | backend:3001 | 660s |
 | `/api/platform-backup` | backend:3001 | 3600s |
 | `/.well-known/oauth-protected-resource/api/mcp` | backend:3001 | 300s |
-| `/socket.io` | backend:3001 | 0s (unbounded) |
+| `/socket.io` | backend:3001 | none |
 
-The timeouts are explicit because Envoy's default is 15 seconds. A Change Guard
-run on a slow device, a device backup, and a platform restore all take longer.
-The Gateway does not buffer request bodies unless configured to, so the platform
-restore streams.
+The timeouts are explicit because Envoy's default is 15 seconds; Change Guard,
+device backups and platform restores need longer. Envoy Gateway does not buffer
+request bodies unless asked, so the restore streams.
 
-Socket.IO is long-lived. The route disables the overall request timeout;
-Socket.IO's pings keep a healthy connection active. The reference backend runs
-one replica. If you scale it, the Gateway needs session affinity for the
-WebSocket connections (or move live updates to a broadcasting design).
+Socket.IO is long-lived. Its pings keep the connection active, so the route
+leaves it unbounded. Keep the backend at one replica; if you scale it, give the
+Gateway session affinity for `/socket.io`.
 
 ## Trusted proxies
 
-The API trusts one proxy hop by default, which is correct when the Gateway is
-the only proxy in front of it: `req.ip` is the client address the Gateway saw,
-and `req.secure` follows its `X-Forwarded-Proto`.
+With a single Gateway, the backend's default one-hop trust is correct: it uses
+the address and scheme the Gateway forwards.
 
-Set `BACKEND_TRUSTED_PROXIES` in `k8s/backend-configmap.yaml` when another proxy
-sits in front of the Gateway, or to restrict which pods may supply forwarded
+Set `BACKEND_TRUSTED_PROXIES` in `k8s/backend-configmap.yaml` only when another
+proxy sits in front of the Gateway, or to restrict which pods may supply those
 headers:
 
 ```yaml
 BACKEND_TRUSTED_PROXIES: 10.244.0.0/16   # your Gateway/proxy pod range
 ```
 
-The API walks the forwarded chain from the socket peer and stops at the first
-address outside the list, so a client cannot claim an address by adding its own
-`X-Forwarded-For` entries. A malformed value stops the backend at startup.
+The backend walks the forwarded chain and stops at the first untrusted address.
+A malformed value stops it at startup.
 
-## Backend, data and NetFlow
+## Backend and storage
 
-- The backend Deployment runs **one replica** with `Recreate`: it owns the
-  schedule, migrations and most background jobs. Extra poll workers are a
-  separate Deployment with `POLLER_ROLE=worker` (see [Polling and scaling](scaling.md)).
-- `/app/data` (generated secrets) and `/app/backups` are persistent claims. Size
-  them for your fleet and set a storage class if the default is not the one you
-  want.
-- The backend container runs read-only. Its `/tmp` is an emptyDir and it has only
-  `NET_RAW` for server-side ARP discovery, with privilege escalation disabled.
-- **NetFlow** is UDP 2055 straight to the backend. The Gateway does not carry
-  it; expose it with a UDP Service or a host port if you collect flows.
-- `CORS_ORIGIN` is in the backend ConfigMap. When the external-TLS mode
-  (`TLS_MODE=http`) is available, set it there too so the Settings UI shows that
-  TLS is managed externally.
+- One backend replica with `Recreate`: it owns the schedule, migrations and
+  background jobs. Extra poll workers are a separate Deployment with
+  `POLLER_ROLE=worker` (see [Polling and scaling](scaling.md)).
+- `/app/data` and `/app/backups` are PVCs (1 GiB and 10 GiB by default). Size
+  them for your fleet and set a storage class if needed.
+- The backend runs read-only with only `NET_RAW`, for server-side ARP discovery.
+- NetFlow is UDP 2055 straight to the backend. Expose it with a UDP Service or a
+  host port if you collect flows.
 
-## Network policy
+## Network
 
-Restrict ingress to the frontend and backend Services to the Gateway
-data-plane pods, and to the backend's API port only. The frontend and backend
-do not need to reach each other. The backend needs its data stores, devices,
-and (if configured) an OIDC provider.
+Allow the Gateway pods to reach the frontend and backend Services, and the
+backend's API port only. The frontend and backend do not need to reach each
+other. The backend needs its data stores, devices, and any OIDC provider.
 
-The backend needs `NET_RAW`, so it cannot run in a namespace that enforces the
-`baseline` or `restricted` Pod Security Standard. Use a namespace without those
-enforcement labels, and restrict who can reach the API with NetworkPolicy and
-RBAC instead.
+Because the backend needs `NET_RAW`, it cannot run under the `baseline` or
+`restricted` Pod Security Standard. Restrict access with NetworkPolicy and RBAC
+instead.
 
 ## Verify
 
 1. `kubectl get pods -n mikrotik-manager` shows both frontend replicas and the
    backend Ready.
-2. `curl -I https://<hostname>/` returns the SPA with the CSP and immutable
-   asset caching; a deep link such as `/devices/1` returns `index.html`.
-3. `curl https://<hostname>/api/health` reaches the backend, and
-   `/api/health` on the frontend Service alone is a 404.
+2. `https://<hostname>/` loads, a deep link such as `/devices/1` works, and
+   hashed assets carry `immutable`.
+3. `/api/health` works through the Gateway; the frontend Service alone returns
+   404 for `/api/health`.
 4. Sign in, open a device, and watch live updates reconnect after a Gateway pod
    restart.
-5. Start a platform backup download and a restore upload; both complete.
-6. Send a request with a forged `X-Forwarded-For` from a pod outside the
-   Gateway range and confirm the audit log shows the real address.
+5. Download a platform backup and upload a restore.
+6. Send a forged `X-Forwarded-For` from a pod outside the Gateway range and
+   confirm the audit log shows the real address.
+
+## Upgrading
+
+Update the two image tags in `k8s/kustomization.yaml`, then run
+`kubectl apply -k k8s`. Migrations run on backend start. The backend uses
+`Recreate`, so expect a short API outage during the rollout; the frontend keeps
+serving its static files.
