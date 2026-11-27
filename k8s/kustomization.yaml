@@ -9,6 +9,9 @@ resources:
   - frontend-deployment.yaml
   - frontend-service.yaml
   - frontend-pdb.yaml
+  - backend-service.yaml
+  - httproute.yaml
+  - policies.yaml
 
 # Pin the frontend to a release tag, or override it when applying:
 #   kubectl apply -k k8s

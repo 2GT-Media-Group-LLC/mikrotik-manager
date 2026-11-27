@@ -1,0 +1,19 @@
+# The API Service. The backend Deployment itself is supplied by the operator;
+# its pod template must carry these labels and a container port named http.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mikrotik-manager-backend
+  labels:
+    app.kubernetes.io/name: mikrotik-manager
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: mikrotik-manager
+    app.kubernetes.io/component: backend
+  ports:
+    - name: http
+      port: 3001
+      targetPort: http
+      protocol: TCP

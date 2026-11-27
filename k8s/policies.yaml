@@ -1,0 +1,27 @@
+# Envoy Gateway policy for the app route.
+#
+# LimitOnly raises the request-buffer limit without buffering the body, so the
+# 20 GB platform-backup restore still streams and WebSocket upgrades keep
+# working. (The default BufferAndLimit mode must not be used on /socket.io.)
+# streamIdleTimeout reclaims a dead live-update connection; Socket.IO's pings
+# keep a healthy one active.
+#
+# requestBuffer.mode: LimitOnly requires Envoy Gateway v1.10 or later. On an
+# earlier controller, drop this policy; Envoy streams request bodies by default.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: mikrotik-manager
+  labels:
+    app.kubernetes.io/name: mikrotik-manager
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: mikrotik-manager
+  requestBuffer:
+    mode: LimitOnly
+    limit: 20Gi
+  timeout:
+    http:
+      streamIdleTimeout: 1h

@@ -1,0 +1,100 @@
+# One hostname: the SPA at /, the API and live updates at /api and /socket.io.
+#
+# Change parentRefs and hostnames for your installation. The Gateway must have
+# an HTTPS listener named "https"; if yours uses another name, update
+# sectionName or remove it to attach to every listener.
+#
+# The timeouts are explicit because Envoy's default request timeout is 15s.
+# Long backups, Change Guard and platform restores would be cut off without
+# them; the SPA is short and gets a much smaller limit.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mikrotik-manager
+  labels:
+    app.kubernetes.io/name: mikrotik-manager
+spec:
+  parentRefs:
+    - name: eg
+      namespace: default
+      sectionName: https
+  hostnames:
+    - mtm.example.com
+  rules:
+    # OAuth discovery for the MCP resource, before the generic /api rule.
+    - matches:
+        - path:
+            type: Exact
+            value: /.well-known/oauth-protected-resource/api/mcp
+      backendRefs:
+        - name: mikrotik-manager-backend
+          port: 3001
+      timeouts:
+        request: 60s
+
+    # Stateless MCP uses JSON, not a stream.
+    - matches:
+        - path:
+            type: Exact
+            value: /api/mcp
+      backendRefs:
+        - name: mikrotik-manager-backend
+          port: 3001
+      timeouts:
+        request: 60s
+
+    # A platform restore uploads up to 20 GB and a download can take a while.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/platform-backup
+      backendRefs:
+        - name: mikrotik-manager-backend
+          port: 3001
+      timeouts:
+        request: 3600s
+
+    # Device backups and restores take minutes (Discussion #85).
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/backups
+      backendRefs:
+        - name: mikrotik-manager-backend
+          port: 3001
+      timeouts:
+        request: 660s
+
+    # Change Guard on a slow device can take minutes end to end (#258).
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: mikrotik-manager-backend
+          port: 3001
+      timeouts:
+        request: 300s
+
+    # Socket.IO is long-lived. The SPA pings, so the policy's idle timeout is
+    # the one that reclaims a dead stream; there is no overall request limit.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /socket.io
+      backendRefs:
+        - name: mikrotik-manager-backend
+          port: 3001
+      timeouts:
+        request: 0s
+
+    # Everything else is the static SPA.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: mikrotik-manager-frontend
+          port: 8080
+      timeouts:
+        request: 30s
