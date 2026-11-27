@@ -192,8 +192,8 @@ here; the beta entries below have every change, release by release.
 
 **Kubernetes** ([Kubernetes](kubernetes.md))
 
-- Reference manifests for the static frontend, backend Service, and an Envoy Gateway route
-  with explicit timeouts.
+- Reference manifests for the frontend and backend Deployments, persistent claims, and an
+  Envoy Gateway route with explicit timeouts.
 - `BACKEND_TRUSTED_PROXIES` lets the API believe a Gateway's forwarded client address and
   scheme. Compose is unchanged: its nginx container still serves the SPA and proxies the API.
 

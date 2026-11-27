@@ -1,0 +1,29 @@
+# Non-secret backend configuration. Change the service addresses, CORS origin
+# and trusted-proxy range for your cluster before applying.
+#
+# Credentials (DB_PASSWORD, INFLUXDB_TOKEN and optionally REDIS_PASSWORD,
+# JWT_SECRET, ENCRYPTION_KEY) come from the mikrotik-manager-backend Secret;
+# see docs/kubernetes.md. JWT_SECRET and ENCRYPTION_KEY may be omitted and are
+# then generated into the /app/data volume on first start.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mikrotik-manager-backend
+  labels:
+    app.kubernetes.io/name: mikrotik-manager
+    app.kubernetes.io/component: backend
+data:
+  NODE_ENV: production
+  TZ: UTC
+  PORT: "3001"
+  NETFLOW_BIND_PORT: "2055"
+  POLLER_ROLE: all
+  TLS_MODE: http
+  CORS_ORIGIN: https://mtm.example.com
+  DATABASE_URL: postgresql://mikrotik@postgres:5432/mikrotik_manager
+  REDIS_URL: redis://redis:6379
+  INFLUXDB_URL: http://influxdb:8086
+  INFLUXDB_ORG: mikrotik-manager
+  INFLUXDB_BUCKET: metrics
+  BACKEND_TRUSTED_PROXIES: 10.244.0.0/16
+  OIDC_BOOTSTRAP_FILE: /etc/mikrotik-manager/oidc.json

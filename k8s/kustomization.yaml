@@ -8,13 +8,16 @@ resources:
   - namespace.yaml
   - frontend-deployment.yaml
   - frontend-service.yaml
+  - backend-configmap.yaml
+  - backend-pvc.yaml
+  - backend-deployment.yaml
   - backend-service.yaml
   - httproute.yaml
   - policies.yaml
 
-# Pin the frontend to a release tag, or override it when applying:
-#   kubectl apply -k k8s
-#   kustomize edit set image ghcr.io/2gt-media-group-llc/mikrotik-manager-frontend=...:1.1.0
+# Pin both images to a release tag, or override them when applying.
 images:
   - name: ghcr.io/2gt-media-group-llc/mikrotik-manager-frontend
+    newTag: latest
+  - name: ghcr.io/2gt-media-group-llc/mikrotik-manager-backend
     newTag: latest

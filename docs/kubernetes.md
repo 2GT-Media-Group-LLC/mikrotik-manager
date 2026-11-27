@@ -1,9 +1,9 @@
 # Kubernetes
 
 The reference manifests in [`k8s/`](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/tree/dev/k8s)
-run the web tier: the static frontend and the Services an existing Gateway routes
-to. PostgreSQL, Redis, InfluxDB and the backend Deployment are supplied by the
-operator, with the settings from [Configuration](configuration.md).
+run the frontend and backend Deployments, their Services, persistent claims and
+the Gateway route. PostgreSQL, Redis, InfluxDB and the credentials Secret are
+supplied by the operator, with the settings from [Configuration](configuration.md).
 
 The frontend is an ordinary static Deployment. It does not terminate TLS, run
 ACME, proxy the API, or hold a certificate volume. In Compose those jobs belong
@@ -19,23 +19,45 @@ to the nginx edge; in Kubernetes they belong to the Gateway and cert-manager.
 The Gateway replaces the Compose nginx edge, so no edge image is deployed here.
 Pin the frontend and backend images to the same release tag in the kustomization.
 
-## Apply the web tier
+## Apply the deployment
+
+Create the namespace and the backend Secret first (skip the namespace if it
+already exists):
 
 ```sh
-kubectl apply -k k8s
+kubectl create namespace mikrotik-manager
+kubectl -n mikrotik-manager create secret generic mikrotik-manager-backend \
+  --from-literal=DB_PASSWORD='...' \
+  --from-literal=INFLUXDB_TOKEN='...'
 ```
 
-This creates the `mikrotik-manager` namespace, two frontend replicas, and the
-frontend and backend Services. Edit `k8s/kustomization.yaml` to pin the images:
+Add `REDIS_PASSWORD`, `JWT_SECRET` and `ENCRYPTION_KEY` to the same Secret if
+you pin them; otherwise the JWT and encryption keys are generated into
+`/app/data` on first start. `DB_PASSWORD` is combined with `DATABASE_URL`, and
+`INFLUXDB_TOKEN` is required.
+
+Edit `k8s/backend-configmap.yaml` for your database, Redis and InfluxDB
+addresses, `CORS_ORIGIN`, and the Gateway pod range for
+`BACKEND_TRUSTED_PROXIES`. Then pin both images in `k8s/kustomization.yaml`:
 
 ```yaml
 images:
   - name: ghcr.io/2gt-media-group-llc/mikrotik-manager-frontend
     newTag: "1.1.0"
+  - name: ghcr.io/2gt-media-group-llc/mikrotik-manager-backend
+    newTag: "1.1.0"
 ```
 
-Before applying, change the placeholders in `k8s/httproute.yaml`: the Gateway
-`parentRefs`, its `sectionName`, and the hostname.
+Change the placeholders in `k8s/httproute.yaml`: the Gateway `parentRefs`, its
+`sectionName`, and the hostname. Then apply:
+
+```sh
+kubectl apply -k k8s
+```
+
+This creates two frontend replicas, the backend Deployment, the backend
+ConfigMap, the `mikrotik-manager-data` and `mikrotik-manager-backups` claims,
+and both Services.
 
 ## Gateway
 
@@ -79,12 +101,10 @@ live updates to a broadcasting design).
 ## Trusted proxies
 
 The API must only believe `X-Forwarded-For` and `X-Forwarded-Proto` from the
-Gateway. Set on the backend Deployment:
+Gateway. Set in `k8s/backend-configmap.yaml`:
 
 ```yaml
-env:
-  - name: BACKEND_TRUSTED_PROXIES
-    value: 10.244.0.0/16   # your Gateway data-plane pod range
+BACKEND_TRUSTED_PROXIES: 10.244.0.0/16   # your Gateway data-plane pod range
 ```
 
 Without it the API trusts one hop (the Compose behaviour), so `req.ip` is the
@@ -95,18 +115,22 @@ believes.
 
 ## Backend, data and NetFlow
 
-- Run **one backend replica** with a `Recreate` strategy: the backend owns the
+- The backend Deployment runs **one replica** with `Recreate`: it owns the
   schedule, migrations and most background jobs. Extra poll workers are a
   separate Deployment with `POLLER_ROLE=worker` (see [Polling and scaling](scaling.md)).
-- Persist `/app/data` (generated secrets) and `/app/backups`. They are not part
-  of the web-tier manifests.
-- The backend container runs read-only. Keep its `/tmp` writable and give it
+- `/app/data` (generated secrets) and `/app/backups` are persistent claims. Size
+  them for your fleet and set a storage class if the default is not the one you
+  want.
+- The backend container runs read-only. Its `/tmp` is an emptyDir and it keeps
   `NET_RAW` for server-side ARP discovery.
 - **NetFlow** is UDP 2055 straight to the backend. The Gateway does not carry
   it; expose it with a UDP Service or a host port if you collect flows.
-- Set `CORS_ORIGIN` to the public HTTPS hostname. When the external-TLS mode
-  (`TLS_MODE=http`) is available, set it too so the Settings UI shows that TLS
-  is managed externally.
+- `CORS_ORIGIN` is in the backend ConfigMap. When the external-TLS mode
+  (`TLS_MODE=http`) is available, set it there too so the Settings UI shows that
+  TLS is managed externally.
+- To import an OIDC configuration once, create the optional Secret
+  `mikrotik-manager-oidc` with key `oidc.json`; it is mounted read-only at
+  `/etc/mikrotik-manager/oidc.json`.
 
 ## Network policy
 
@@ -117,7 +141,8 @@ and (if configured) an OIDC provider.
 
 ## Verify
 
-1. `kubectl get pods -n mikrotik-manager` shows both frontend replicas Ready.
+1. `kubectl get pods -n mikrotik-manager` shows both frontend replicas and the
+   backend Ready.
 2. `curl -I https://<hostname>/` returns the SPA with the CSP and immutable
    asset caching; a deep link such as `/devices/1` returns `index.html`.
 3. `curl https://<hostname>/api/health` reaches the backend, and
