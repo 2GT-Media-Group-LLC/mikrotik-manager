@@ -39,7 +39,6 @@ spec:
       containers:
         - name: frontend
           image: ghcr.io/2gt-media-group-llc/mikrotik-manager-frontend:latest
-          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8080

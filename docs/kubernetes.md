@@ -131,6 +131,11 @@ data-plane pods, and to the backend's API port only. The frontend and backend
 do not need to reach each other. The backend needs its data stores, devices,
 and (if configured) an OIDC provider.
 
+The backend needs `NET_RAW`, so it cannot run in a namespace that enforces the
+`baseline` or `restricted` Pod Security Standard. Use a namespace without those
+enforcement labels, and restrict who can reach the API with NetworkPolicy and
+RBAC instead.
+
 ## Verify
 
 1. `kubectl get pods -n mikrotik-manager` shows both frontend replicas and the

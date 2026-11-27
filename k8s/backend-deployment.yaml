@@ -33,7 +33,6 @@ spec:
       containers:
         - name: backend
           image: ghcr.io/2gt-media-group-llc/mikrotik-manager-backend:latest
-          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 3001
