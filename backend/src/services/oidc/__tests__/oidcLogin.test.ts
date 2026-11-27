@@ -17,6 +17,7 @@ jest.mock('openid-client', () => ({
   generators: { state: () => 'st', nonce: () => 'n', codeVerifier: () => 'v', codeChallenge: () => 'c' },
   Issuer: {
     discover: async () => ({
+      metadata: { id_token_signing_alg_values_supported: ['RS256'] },
       Client: class {
         authorizationUrl() { return 'https://idp/authorize'; }
         async callback() { return { claims: () => claims }; }

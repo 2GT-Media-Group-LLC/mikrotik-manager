@@ -49,6 +49,20 @@ function configFingerprint(config: OidcConfig, redirectUri: string): string {
     .digest('hex');
 }
 
+/**
+ * The ID token algorithm to expect. openid-client 5 expects RS256 unless told
+ * otherwise, so a provider that signs only with ES256 (Kanidm) failed every
+ * sign-in (#511). Leave the default when the provider offers RS256 or says
+ * nothing; otherwise take the first algorithm it offers that we can check:
+ * never 'none', and an HS* one only with a client secret to check it with.
+ */
+export function idTokenAlg(offered: unknown, hasSecret: boolean): { id_token_signed_response_alg?: string } {
+  if (!Array.isArray(offered) || offered.length === 0 || offered.includes('RS256')) return {};
+  const usable = offered.find((a): a is string =>
+    typeof a === 'string' && a !== 'none' && (!a.startsWith('HS') || hasSecret));
+  return usable ? { id_token_signed_response_alg: usable } : {};
+}
+
 async function getClient(config: OidcConfig, redirectUri: string): Promise<Client> {
   if (!config.issuer_url || !config.client_id) throw new Error('OIDC is not fully configured');
   const key = configFingerprint(config, redirectUri);
@@ -63,6 +77,7 @@ async function getClient(config: OidcConfig, redirectUri: string): Promise<Clien
     response_types: ['code'],
     // Public client (no secret) must use PKCE-only token auth.
     token_endpoint_auth_method: secret ? 'client_secret_basic' : 'none',
+    ...idTokenAlg(issuer.metadata.id_token_signing_alg_values_supported, !!secret),
   });
   clientCache = { key, client };
   return client;
