@@ -7,6 +7,21 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.39
+
+Released on Friday 27 November 2026. Two fixes.
+
+- **Polling recovers when Redis starts after the backend.** After a host reboot Docker restarts
+  the containers in any order, so the backend could start before Redis. Polling, the scheduler and
+  live updates then stayed broken, with "Connection is closed", until the backend was restarted
+  by hand. The backend now waits for Redis before starting them, and its log says "Waiting for
+  Redis" until it answers. Thanks to [@Chillwifi-dev](https://github.com/Chillwifi-dev) for the
+  report ([discussion #507](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/507)).
+- **OIDC sign-in works with providers that sign ID tokens with ES256**, such as Kanidm
+  ([#511](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/511)). Sign-in expected
+  RS256 and failed with "unexpected JWT alg received". When the provider doesn't offer RS256, the
+  algorithm it does offer is used. Thanks to [@judahrand](https://github.com/judahrand).
+
 ## 1.0.38
 
 Released on Thursday 26 November 2026. A security fix, reported by [@judahrand](https://github.com/judahrand);
