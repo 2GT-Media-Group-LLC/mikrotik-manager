@@ -50,9 +50,6 @@ spec:
             - secretRef:
                 name: mikrotik-manager-backend
           securityContext:
-            # Only NET_RAW is granted, and it is already in the container's
-            # bounding/permitted set. No privilege escalation is needed:
-            # arp-scan uses the container capability directly.
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
