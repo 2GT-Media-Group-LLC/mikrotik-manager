@@ -309,11 +309,15 @@ export async function upsertClients(deviceId: number, deviceName: string, rows: 
          SELECT $1, u.*, TRUE, NOW(), NOW()
            FROM unnest($2::varchar[], $3::varchar[], $4::varchar[], $5::varchar[], $6::int[], $7::bigint[], $8::bigint[],
                        $9::int[], $10::varchar[], $11::bigint[], $12::bigint[])
+                AS u(mac, hostname, ip, iface, vlan, tx, rx, signal, kind, tx_rate, rx_rate)
         ${CLIENT_UPSERT_SET}`,
         [deviceId, col(0), col(1), col(2), col(3), col(4), col(5), col(6), col(7), col(8), col(9), col(10)],
       );
       stored.push(...batch.map((r) => r[0]));
-    } catch {
+    } catch (batchErr) {
+      // Said once a batch, so a batch that always fails shows in the log: the
+      // statement once lost its alias and every poll fell back unnoticed.
+      console.warn(`[${logSafe(deviceName)}] Storing ${batch.length} clients one at a time; the batch failed: ${logSafe((batchErr as Error).message)}`);
       for (const row of batch) {
         try {
           await query(
