@@ -95,18 +95,21 @@ WebSocket connections (or move live updates to a broadcasting design).
 
 ## Trusted proxies
 
-The API must only believe `X-Forwarded-For` and `X-Forwarded-Proto` from the
-Gateway. Set in `k8s/backend-configmap.yaml`:
+The API trusts one proxy hop by default, which is correct when the Gateway is
+the only proxy in front of it: `req.ip` is the client address the Gateway saw,
+and `req.secure` follows its `X-Forwarded-Proto`.
+
+Set `BACKEND_TRUSTED_PROXIES` in `k8s/backend-configmap.yaml` when another proxy
+sits in front of the Gateway, or to restrict which pods may supply forwarded
+headers:
 
 ```yaml
-BACKEND_TRUSTED_PROXIES: 10.244.0.0/16   # your Gateway data-plane pod range
+BACKEND_TRUSTED_PROXIES: 10.244.0.0/16   # your Gateway/proxy pod range
 ```
 
-Without it the API trusts one hop (the Compose behaviour), so `req.ip` is the
-Gateway pod and `req.secure` is false. With it, sign-in rate limits per address,
-the audit log IP, and HTTPS-only cookies and OIDC callbacks work. A malformed
-value stops the backend at startup rather than silently widening what it
-believes.
+The API walks the forwarded chain from the socket peer and stops at the first
+address outside the list, so a client cannot claim an address by adding its own
+`X-Forwarded-For` entries. A malformed value stops the backend at startup.
 
 ## Backend, data and NetFlow
 

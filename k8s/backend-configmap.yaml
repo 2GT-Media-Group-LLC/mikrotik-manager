@@ -18,4 +18,3 @@ data:
   INFLUXDB_URL: http://influxdb:8086
   INFLUXDB_ORG: mikrotik-manager
   INFLUXDB_BUCKET: metrics
-  BACKEND_TRUSTED_PROXIES: 10.244.0.0/16
