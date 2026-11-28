@@ -410,6 +410,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.15
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc14" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2608,6 +2619,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#110-rc15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.15
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-rc14" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3857,6 +3879,8 @@ beta, sent a fix or reported a problem:</p>
 <li><a href="https://github.com/schmitt330">@schmitt330</a>: device tools on RouterOS 6.</li>
 <li><a href="https://github.com/orshih6">@orshih6</a>: a security report on the release workflow.</li>
 </ul>
+<h2 id="110-rc15">1.1.0-rc.15<a class="headerlink" href="#110-rc15" title="Permanent link">&para;</a></h2>
+<p>The fix in 1.0.42 below: adopting a device reports its result instead of a false failure.</p>
 <h2 id="110-rc14">1.1.0-rc.14<a class="headerlink" href="#110-rc14" title="Permanent link">&para;</a></h2>
 <p>The fix in 1.0.41 below: changing only an SSID's VLAN ID in Wireless Settings applies it.</p>
 <h2 id="110-rc13">1.1.0-rc.13<a class="headerlink" href="#110-rc13" title="Permanent link">&para;</a></h2>
@@ -5060,6 +5084,15 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1042">1.0.42<a class="headerlink" href="#1042" title="Permanent link">&para;</a></h2>
+<p>Released on Saturday 28 November 2026. One fix.</p>
+<ul>
+<li><strong>Adopting a device reports its result instead of a false failure.</strong> The page gave up on the
+  adoption after 30 seconds, and a static adoption takes about that long, so it could report a
+  failure just before the device was registered, and the device then showed up anyway. The page
+  now waits up to four minutes, which also covers DHCP adoptions that wait for a lease. When the
+  device doesn't answer ping or rejects the password, the backend log now says so.</li>
+</ul>
 <h2 id="1041">1.0.41<a class="headerlink" href="#1041" title="Permanent link">&para;</a></h2>
 <p>Released on Saturday 28 November 2026. One fix.</p>
 <ul>
