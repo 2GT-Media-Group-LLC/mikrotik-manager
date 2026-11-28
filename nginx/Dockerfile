@@ -25,6 +25,7 @@ COPY --from=frontend-builder /frontend/dist /usr/share/nginx/html
 # Copy nginx config: the listeners, and the app they serve (#256)
 COPY nginx/nginx.conf /etc/nginx/conf.d/default.conf
 COPY nginx/mtm-app.conf /etc/nginx/mtm-app.conf
+COPY nginx/mtm-https.conf /etc/nginx/mtm-https.conf
 
 # Remove default nginx config backup
 RUN rm -f /etc/nginx/conf.d/default.conf.bak

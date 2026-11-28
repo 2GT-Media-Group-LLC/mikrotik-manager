@@ -18,7 +18,7 @@ Set in `.env` at the project root. Changing any of these requires a container re
 | `INFLUXDB_ADMIN_PASSWORD` | `admin_password_123` | InfluxDB admin UI password |
 | `REDIS_PASSWORD` | *none* | Makes Redis require a password. Can be set or changed at any time |
 | `PASSWORD_LOGIN` | `true` | `false` makes sign-in SSO-only. See [SSO-only sign-in](sso-oidc.md#behaviour-and-safety) |
-| `HTTP_PORT` | `80` | Host port for HTTP (redirects to HTTPS, or serves the app with `TLS_MODE=proxy`) |
+| `HTTP_PORT` | `80` | Host port for HTTP. Redirects to HTTPS in `https` mode and serves the app in `proxy` and `http` modes. |
 | `HTTPS_PORT` | `443` | Host port for HTTPS |
 | `HTTPS_PROXY` | *unset* | Optional proxy URL passed to `npm` and `apk` while building source images |
 | `ACME_DOMAIN` | *unset* | DNS name for a Let's Encrypt certificate. See [Let's Encrypt](#lets-encrypt-acme) |
@@ -26,7 +26,8 @@ Set in `.env` at the project root. Changing any of these requires a container re
 | `ACME_SERVER` | Let's Encrypt | Another ACME directory URL, such as staging or a private CA |
 | `BIND_ADDRESS` | *every interface* | Host address the web UI is published on. See [Network exposure](#network-exposure). |
 | `NETFLOW_BIND_ADDRESS` | *every interface* | Host address the NetFlow collector (UDP 2055) is published on. |
-| `TLS_MODE` | `https` | `proxy` when your own reverse proxy terminates TLS. See [Behind a reverse proxy](#behind-a-reverse-proxy). |
+| `TLS_MODE` | `https` | `proxy` serves HTTP and HTTPS. `http` serves HTTP only. See [Behind a reverse proxy](#behind-a-reverse-proxy). |
+| `BACKEND_UPSTREAM` | `backend:3001` | Internal backend address as `host:port` or `[IPv6]:port`. Unset or empty uses the default. |
 | `TRUSTED_PROXIES` | *none* | Your reverse proxy's address or range, so the client address it forwards is believed. |
 
 > Never commit `.env`. It is already listed in `.gitignore`.
@@ -350,7 +351,7 @@ Certificate (ACME)**. The email is optional, but without one you get no expiry n
   place to look when it fails. `docker compose logs nginx` has it too.
 - To turn it off, press **Use .env Values** with no `ACME_DOMAIN` in `.env`. The certificate it
   got stays in place.
-- It can't work with `TLS_MODE=proxy`; there, use your proxy's own certificates.
+- Automatic issuance and renewal require `TLS_MODE=https`.
 
 The same settings can come from `.env`: `ACME_DOMAIN`, `ACME_EMAIL` and `ACME_SERVER` (blank means
 Let's Encrypt). Settings saved in the page win over `.env`, and **Use .env Values** drops them.
@@ -377,12 +378,29 @@ Then `docker compose up -d`.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `TLS_MODE` | `https` | `proxy` serves the app over plain HTTP on `HTTP_PORT` instead of redirecting it to HTTPS. HTTPS on `HTTPS_PORT` keeps working with the manager's own certificate. |
+| `TLS_MODE` | `https` | `proxy` serves the app on `HTTP_PORT` and on `HTTPS_PORT` with the manager's certificate. `http` serves the app on `HTTP_PORT` only. |
 | `TRUSTED_PROXIES` | *none* | Your proxy's address or range (CIDR), comma-separated, IPv4 or IPv6. Only requests from these addresses may say who the client is (`X-Forwarded-For`) and that the browser used HTTPS (`X-Forwarded-Proto`). |
 | `CORS_ORIGIN` | | The address people type in the browser, as the proxy serves it. The browser sends it with every request, and the API refuses origins not on the list. |
 
-Point the proxy at `http://<manager host>:<HTTP_PORT>`, and turn on WebSocket support: live
-updates and the device terminal run over `/socket.io/`.
+Point the proxy at `http://<manager host>:<HTTP_PORT>`, or use
+`https://<manager host>:<HTTPS_PORT>` in `proxy` mode. Turn on WebSocket support for live
+updates and the device terminal, which run over `/socket.io/`.
+
+Use `TLS_MODE=http` when the reverse proxy handles all HTTPS. With this mode, nginx can
+start without a certificate mount. When running the images directly, set the same
+`TLS_MODE` on nginx and the backend.
+
+Both base Compose files publish both ports. For an HTTP-only setup with a reverse proxy
+running directly on the host, point it at `http://127.0.0.1:8080` and load this override
+after the base Compose file with `-f`.
+[Compose port overrides](https://docs.docker.com/reference/compose-file/merge/#replace-value)
+
+```yaml
+services:
+  nginx:
+    ports: !override
+      - "127.0.0.1:8080:80"
+```
 
 Give the proxy a read timeout of at least 300 seconds (the same as the manager's own). Many
 proxies default to 60, and a protected change on a slow device can take longer: on a CRS112 a
@@ -393,11 +411,11 @@ page. Switching a device to API-SSL or WebFig to HTTPS can take several minutes 
 router signs a certificate, so from 1.0.14 these switches carry on in the background when they
 take longer than about 25 seconds, and the page fetches the outcome when it's ready. Other long
 requests, such as a protected change on a slow device or a large backup, still need the proxy
-to wait; behind Cloudflare, make those from an address that reaches the manager directly.
+to wait. In `proxy` mode, you can reach the manager directly over HTTPS for those requests.
 
 **Keep the plain HTTP port for the proxy only.** Anyone else who can reach it talks to the
-manager unencrypted. If the proxy runs on the same host, `BIND_ADDRESS=127.0.0.1` keeps both
-ports off the network; otherwise use one of the options in
+manager unencrypted. If the proxy runs on the same host, `BIND_ADDRESS=127.0.0.1` keeps the
+default port mappings off the network. For a proxy on another host, use one of the options in
 [Network exposure](#network-exposure).
 
 **Why `TRUSTED_PROXIES` matters.** Without it every request appears to come from the proxy:
@@ -405,8 +423,8 @@ the audit log shows the proxy's address, and the per-address limit on sign-in at
 all your users as one, so a busy morning or a few typos can stop everyone signing in for a
 while. Headers from anyone
 else are ignored, so a client can't claim to be somewhere else by sending its own
-`X-Forwarded-For`. The nginx container logs a warning at start if `TLS_MODE=proxy` is set
-without it.
+`X-Forwarded-For`. The nginx container logs a warning at start in `proxy` and `http` modes
+when `TRUSTED_PROXIES` is missing.
 
 Not sure which address the proxy arrives from? Leave `TRUSTED_PROXIES` unset, sign in once
 through the proxy, and look at the **IP** column of the newest entry under **Settings →

@@ -7,6 +7,7 @@ mkdir -p /certs /tmp/acme-test-bin
 : > /certs/server.key
 cat > /tmp/acme-test-bin/nginx <<'EOF'
 #!/bin/sh
+echo NGINX-STARTED
 while :; do sleep 60; done
 EOF
 cat > /tmp/acme-test-bin/su-exec <<'EOF'
@@ -51,19 +52,26 @@ wait_for() {
     done
 }
 
-if [ "${1:-}" = proxy ]; then
-    echo stale > /certs/acme-last-attempt
-    TLS_MODE=proxy sh /source/nginx/entrypoint.sh > /tmp/acme-test-entrypoint.log 2>&1 &
-    wait_for test ! -e /certs/acme-last-attempt
-    echo 'Proxy mode clears the saved attempt.'
-    exit 0
-fi
-
 cat > /certs/acme-settings.conf <<'EOF'
 ACME_DOMAIN=manager.example.com
 ACME_EMAIL=
 ACME_SERVER=https://ca.example.com/directory
 EOF
+case "${1:-}" in
+    proxy|http)
+        echo stale > /certs/acme-last-attempt
+        TLS_MODE=$1 sh /source/nginx/entrypoint.sh > /tmp/acme-test-entrypoint.log 2>&1 &
+        wait_for grep -q NGINX-STARTED /tmp/acme-test-entrypoint.log
+        if [ "$1" = proxy ]; then
+            test ! -e /certs/acme-last-attempt
+            grep -q 'ACME is disabled' /tmp/acme-test-entrypoint.log
+        else
+            test "$(cat /certs/acme-last-attempt)" = stale
+        fi
+        echo "ACME startup behavior passed for TLS_MODE=$1."
+        exit 0
+        ;;
+esac
 echo fail > /tmp/acme-test-mode
 if [ "${1:-}" = real ]; then
     echo real > /tmp/acme-test-mode

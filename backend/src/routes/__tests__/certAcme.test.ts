@@ -45,12 +45,42 @@ describe('manager ACME settings', () => {
     delete process.env.ACME_DOMAIN;
     delete process.env.ACME_EMAIL;
     delete process.env.ACME_SERVER;
+    delete process.env.TLS_MODE;
     jest.mocked(readFile).mockRejectedValue(Object.assign(new Error('missing'), { code: 'ENOENT' }));
     jest.mocked(writeFile).mockResolvedValue(undefined);
     jest.mocked(rename).mockResolvedValue(undefined);
     jest.mocked(unlink).mockResolvedValue(undefined);
   });
   afterAll(() => { process.env = originalEnv; });
+
+  it('reports that the manager is serving HTTP only', async () => {
+    process.env.TLS_MODE = 'http';
+
+    await request(app()).get('/api/cert').set('x-test-role', 'admin')
+      .expect(200, { exists: false, http_only: true });
+  });
+
+  it('keeps local certificate settings available in proxy mode', async () => {
+    process.env.TLS_MODE = 'proxy';
+
+    await request(app()).get('/api/cert/acme').set('x-test-role', 'admin').expect(200);
+    await request(app()).post('/api/cert/upload').set('x-test-role', 'admin').send({}).expect(400);
+  });
+
+  it.each([
+    ['post', '/regenerate'],
+    ['post', '/upload'],
+    ['put', '/acme'],
+    ['delete', '/acme'],
+    ['put', '/acme/ca-bundle'],
+    ['delete', '/acme/ca-bundle'],
+  ] as const)('blocks %s %s in HTTP-only mode', async (method, path) => {
+    process.env.TLS_MODE = 'http';
+
+    await request(app())[method](`/api/cert${path}`).set('x-test-role', 'admin').expect(409);
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(unlink).not.toHaveBeenCalled();
+  });
 
   it('lets an operator read the settings, and only an administrator change them', async () => {
     expect((await request(app()).get('/api/cert/acme')).status).toBe(401);
