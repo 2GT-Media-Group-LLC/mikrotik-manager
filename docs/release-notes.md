@@ -268,6 +268,10 @@ beta, sent a fix or reported a problem:
 - [@schmitt330](https://github.com/schmitt330): device tools on RouterOS 6.
 - [@orshih6](https://github.com/orshih6): a security report on the release workflow.
 
+## 1.1.0-rc.14
+
+The fix in 1.0.41 below: changing only an SSID's VLAN ID in Wireless Settings applies it.
+
 ## 1.1.0-rc.13
 
 The fix in 1.0.40 below: turning on VLAN filtering on a new device warns instead of predicting a
@@ -1531,6 +1535,17 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.41
+
+Released on Saturday 28 November 2026. One fix.
+
+- **Changing only an SSID's VLAN ID in Wireless Settings applies it.** The page sends only what
+  changed, and the VLAN ID was applied only together with a bridge, so a VLAN-only edit saved
+  without changing anything on the device. The VLAN is now set on the radio's bridge port
+  whenever it's sent: its PVID, an untagged member of that VLAN, and out of the VLAN it was
+  untagged in before. Before, a radio moved to a new VLAN could stay listed in the old one too.
+  Its tagged VLANs are left alone, so a wireless link that carries tagged VLANs keeps them.
 
 ## 1.0.40
 
