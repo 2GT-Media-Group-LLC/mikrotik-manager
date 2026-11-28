@@ -56,6 +56,27 @@ const ok = (detail = ''): InvariantResult => ({ ok: true, detail });
 const filteringOn = (snap: DeviceSnapshot, bridge: string | null): boolean =>
   !!bridge && isTrue(snap.bridges.find((b) => b['name'] === bridge)?.['vlan-filtering']);
 
+/**
+ * True when a bridge with no VLAN rows at all would get the management VLAN
+ * from the PVIDs once filtering is on: the bridge and the port management
+ * arrives on both have that PVID and accept untagged frames. A bridge with
+ * filtering on always lists its PVID rows, so an empty table means it's off
+ * (or every row is being removed, which this doesn't excuse: rows remain).
+ * RouterOS leaves pvid and frame-types out of the bridge print while
+ * filtering is off; missing means the defaults, 1 and admit-all.
+ */
+function pvidCarries(snap: DeviceSnapshot, bridge: string, ingressPort: string | null, vid: number): boolean {
+  if (snap.bridgeVlans.some((r) => r['bridge'] === bridge)) return false;
+  const admitsUntagged = (row: Record<string, string> | undefined) =>
+    (row?.['frame-types'] ?? 'admit-all') !== 'admit-only-vlan-tagged';
+  const pvidOf = (row: Record<string, string> | undefined) => parseInt(row?.['pvid'] || '1', 10);
+  const b = snap.bridges.find((x) => x['name'] === bridge);
+  if (!b || pvidOf(b) !== vid || !admitsUntagged(b)) return false;
+  if (!ingressPort) return true;
+  const port = snap.bridgePorts.find((p) => p['interface'] === ingressPort && p['bridge'] === bridge);
+  return !!port && pvidOf(port) === vid && admitsUntagged(port);
+}
+
 export const INVARIANTS: Invariant[] = [
   {
     id: 'mgmt-ip-present',
@@ -187,6 +208,18 @@ export const INVARIANTS: Invariant[] = [
       // A device that already had no entry stays quiet: analyzeChange only reports
       // invariants that FLIP, so this fires on removal, not on pre-existing state.
       if (!m.found) {
+        // A bridge with an empty VLAN table, as every new device has before
+        // VLAN filtering is first turned on: RouterOS fills it from the PVIDs
+        // once filtering is on, so management keeps working, but only through
+        // that automatic entry. A warning, not "predicted to cut" in red.
+        if (pvidCarries(snap, path.bridge, path.ingressPort, vid)) {
+          const members = [path.bridge, path.ingressPort].filter(Boolean).join(' and ');
+          return {
+            ok: false,
+            severity: 'warning',
+            detail: `VLAN ${vid} has no entry in ${path.bridge}'s VLAN table. With VLAN filtering on, RouterOS adds one from the PVIDs, so management should keep working, but only through that automatic entry: a later PVID or frame-types change removes it. Add VLAN ${vid} with ${members} untagged first.`,
+          };
+        }
         return {
           ok: false,
           detail: `VLAN ${vid} would have no entry in ${path.bridge}'s VLAN table. Management arrives untagged on that VLAN, and relying on RouterOS to re-add the bridge dynamically is not safe once VLAN filtering is on.`,
