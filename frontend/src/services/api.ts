@@ -2518,7 +2518,9 @@ export const adoptionApi = {
   candidates: () => api.get<{ candidates: AdoptionCandidate[] }>('/adoption/candidates'),
   checkAddress: (jumpHostId: number, address: string) =>
     api.post<{ free: boolean; reason?: string }>('/adoption/check-address', { jumpHostId, address }),
-  adopt: (body: AdoptRequest) => api.post<AdoptionResult>('/adoption/adopt', body),
+  // A static adoption takes about 30 s and a DHCP one longer: the default 30 s
+  // gave up just before the device was registered and reported a failure.
+  adopt: (body: AdoptRequest) => api.post<AdoptionResult>('/adoption/adopt', body, GUARDED),
   cleanup: () => api.post<{ removed: number }>('/adoption/cleanup'),
 };
 
