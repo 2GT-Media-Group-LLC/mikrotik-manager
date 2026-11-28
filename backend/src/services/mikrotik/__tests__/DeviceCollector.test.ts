@@ -1260,3 +1260,60 @@ describe('bridge VLAN edits keep what they don\'t change (#449)', () => {
     expect(added()).toEqual({ bridge: 'bridge1', 'vlan-ids': '30', tagged: 'ether1', untagged: 'ether3' });
   });
 });
+
+// ── setInterfaceUntaggedVlan ─────────────────────────────────────────────────
+describe('setInterfaceUntaggedVlan', () => {
+  // A small bridge: wifi1 is the SSID on VLAN 10, and also carries VLAN 99
+  // tagged (a wireless link). ether1 is the uplink.
+  function bridgeModel() {
+    const ports = [
+      { '.id': '*P1', interface: 'ether1', bridge: 'bridge', pvid: '1' },
+      { '.id': '*P2', interface: 'wifi1', bridge: 'bridge', pvid: '10' },
+    ];
+    const vlans: Record<string, string>[] = [
+      { '.id': '*V10', bridge: 'bridge', 'vlan-ids': '10', tagged: 'bridge,ether1', untagged: 'wifi1' },
+      { '.id': '*V13', bridge: 'bridge', 'vlan-ids': '13', tagged: 'bridge,ether1', untagged: '' },
+      { '.id': '*V99', bridge: 'bridge', 'vlan-ids': '99', tagged: 'ether1,wifi1', untagged: '' },
+    ];
+    const match = (row: Record<string, string>, queries: string[] = []) =>
+      queries.every((q) => { const [k, v] = q.slice(1).split('='); return row[k] === v; });
+    const writes: [string, Record<string, string>][] = [];
+    const execute = jest.fn(async (path: string, params: Record<string, string> = {}, queries: string[] = []) => {
+      if (path === '/interface/bridge/port/print') return ports.filter((r) => match(r, queries));
+      if (path === '/interface/bridge/vlan/print') return vlans.filter((r) => match(r, queries));
+      writes.push([path, params]);
+      const table = path.startsWith('/interface/bridge/port') ? ports : vlans;
+      if (path.endsWith('/set')) Object.assign(table.find((r) => r['.id'] === params['.id'])!, params);
+      if (path.endsWith('/add')) (table as Record<string, string>[]).push({ '.id': `*N${table.length}`, ...params });
+      return [];
+    });
+    const collector = new DeviceCollector(testDevice);
+    (collector as unknown as { client: { execute: jest.Mock } }).client.execute = execute;
+    return { collector, ports, vlans, writes };
+  }
+
+  it('moves the radio to the new VLAN and out of the old one, keeping its tagged VLANs', async () => {
+    const { collector, ports, vlans, writes } = bridgeModel();
+    const r = await collector.setInterfaceUntaggedVlan('wifi1', 13);
+    expect(r).toEqual({ inBridge: true, notRemoved: [] });
+    expect(ports[1].pvid).toBe('13');
+    expect(ports[1]).not.toHaveProperty('frame-types');
+    const row = (vid: string) => vlans.find((v) => v['vlan-ids'] === vid)!;
+    expect(row('13').untagged.split(',')).toContain('wifi1');
+    expect(row('10').untagged).toBe('');
+    expect(row('99').tagged.split(',')).toEqual(['ether1', 'wifi1']);
+    expect(writes.every(([p]) => !p.endsWith('/remove'))).toBe(true);
+  });
+
+  it('adds the VLAN row when there is none', async () => {
+    const { collector, vlans } = bridgeModel();
+    await collector.setInterfaceUntaggedVlan('wifi1', 20);
+    expect(vlans.find((v) => v['vlan-ids'] === '20')).toMatchObject({ bridge: 'bridge', untagged: 'wifi1' });
+  });
+
+  it("says so when the interface isn't in a bridge", async () => {
+    const { collector, writes } = bridgeModel();
+    expect(await collector.setInterfaceUntaggedVlan('wifi2', 13)).toEqual({ inBridge: false, notRemoved: [] });
+    expect(writes).toEqual([]);
+  });
+});
