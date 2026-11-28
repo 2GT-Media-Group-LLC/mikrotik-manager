@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1041" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.41
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1040" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1918,6 +1929,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1041" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.41
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1040" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2455,6 +2477,16 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1041">1.0.41<a class="headerlink" href="#1041" title="Permanent link">&para;</a></h2>
+<p>Released on Saturday 28 November 2026. One fix.</p>
+<ul>
+<li><strong>Changing only an SSID's VLAN ID in Wireless Settings applies it.</strong> The page sends only what
+  changed, and the VLAN ID was applied only together with a bridge, so a VLAN-only edit saved
+  without changing anything on the device. The VLAN is now set on the radio's bridge port
+  whenever it's sent: its PVID, an untagged member of that VLAN, and out of the VLAN it was
+  untagged in before. Before, a radio moved to a new VLAN could stay listed in the old one too.
+  Its tagged VLANs are left alone, so a wireless link that carries tagged VLANs keeps them.</li>
+</ul>
 <h2 id="1040">1.0.40<a class="headerlink" href="#1040" title="Permanent link">&para;</a></h2>
 <p>Released on Friday 27 November 2026. One fix.</p>
 <ul>
