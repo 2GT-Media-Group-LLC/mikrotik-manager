@@ -448,6 +448,13 @@ router.put('/:id/interfaces/:name', requireWrite, async (req: Request, res: Resp
     if (body[key] !== undefined) params[rosKey] = String(body[key]);
   }
   if (body.disabled !== undefined) params['disabled'] = body.disabled ? 'yes' : 'no';
+  // The SSID's untagged VLAN. Sent on its own when only it changed: the page
+  // sends only what changed, and the VLAN was applied only next to a bridge,
+  // so the save succeeded and the radio stayed on its old VLAN.
+  const vlanId = body.vlan_id !== undefined && body.vlan_id !== '' ? Number(body.vlan_id) : undefined;
+  if (vlanId !== undefined && (!Number.isInteger(vlanId) || vlanId < 1 || vlanId > 4094)) {
+    return res.status(400).json({ error: 'VLAN ID must be a whole number from 1 to 4094' });
+  }
   if (body.authentication_types !== undefined) {
     params['authentication-types'] = Array.isArray(body.authentication_types)
       ? (body.authentication_types as string[]).join(',')
@@ -465,21 +472,30 @@ router.put('/:id/interfaces/:name', requireWrite, async (req: Request, res: Resp
         kind: 'batch',
         changes: [
           ...(body.disabled !== undefined ? [{ kind: 'interface.disable' as const, name: ifaceName, disabled: !!body.disabled }] : []),
+          ...(vlanId !== undefined && body.bridge !== ''
+            ? [{ kind: 'port.vlan' as const, port: ifaceName, pvid: vlanId, tagged: [], untagged: [vlanId] }]
+            : []),
           { kind: 'path-object.change', name: ifaceName, what: 'Changing this wireless interface' },
         ],
       },
     },
     async (collector) => {
       await collector.assertNotCapsmanManaged(ifaceName);
-      await collector.setWirelessInterface(ifaceName, params);
+      // A VLAN-only edit has nothing for the interface itself.
+      if (Object.keys(params).length) await collector.setWirelessInterface(ifaceName, params);
       // Bridge port membership — only touched when 'bridge' key is present in the request
       if (body.bridge !== undefined) {
         const bridgeName = body.bridge ? String(body.bridge) : null;
-        const pvid = body.vlan_id ? Number(body.vlan_id) : undefined;
-        await collector.setInterfaceBridge(ifaceName, bridgeName, pvid);
-        // Ensure the VLAN ID is in the bridge VLAN table (untagged)
-        if (bridgeName && body.vlan_id) {
-          await collector.ensureVlanMembership(ifaceName, Number(body.vlan_id));
+        await collector.setInterfaceBridge(ifaceName, bridgeName, vlanId);
+      }
+      // In the bridge it's in now (just set, or unchanged): PVID, untagged
+      // member of that VLAN, and out of the one it was untagged in before.
+      if (vlanId !== undefined && body.bridge !== '') {
+        const { inBridge, notRemoved } = await collector.setInterfaceUntaggedVlan(ifaceName, vlanId);
+        if (!inBridge) throw new Error(`${ifaceName} isn't in a bridge, so it has no VLAN to set. Choose a bridge too.`);
+        if (notRemoved.length) {
+          return { ok: true, not_removed: notRemoved,
+            message: `Saved. ${ifaceName} is still in VLAN${notRemoved.length > 1 ? 's' : ''} ${notRemoved.join(', ')}, which share${notRemoved.length > 1 ? '' : 's'} a bridge VLAN row (a range) with VLAN ${vlanId}. Split that row under VLANs to remove it.` };
         }
       }
       return { ok: true };

@@ -5070,6 +5070,30 @@ export class DeviceCollector {
   }
 
   /**
+   * Move an interface already in a bridge, such as a radio, to another
+   * untagged VLAN: its PVID, an untagged member of that VLAN, and out of the
+   * untagged list of the VLAN it was on. Its tagged VLANs and frame
+   * admission stay as they are. Adding to the new VLAN alone left the radio
+   * untagged in both. Returns VLANs it couldn't leave (range rows).
+   */
+  async setInterfaceUntaggedVlan(ifaceName: string, vlanId: number): Promise<{ inBridge: boolean; notRemoved: number[] }> {
+    const ports = await this.client
+      .execute('/interface/bridge/port/print', {}, [`?interface=${ifaceName}`])
+      .catch(() => []);
+    const bridge = (ports[0] as Record<string, string> | undefined)?.['bridge'];
+    if (!bridge) return { inBridge: false, notRemoved: [] };
+    await this.setPortVlanConfig(ifaceName, vlanId, [], [vlanId]);
+    const rows = await this.client
+      .execute('/interface/bridge/vlan/print', {}, [`?bridge=${bridge}`])
+      .catch(() => []);
+    const plan = planAccessRemovals(rows as Record<string, string>[], bridge, ifaceName, vlanId, { keepTagged: true });
+    for (const w of plan.writes) {
+      await this.client.execute('/interface/bridge/vlan/set', { '.id': w.id, tagged: w.tagged, untagged: w.untagged });
+    }
+    return { inBridge: true, notRemoved: plan.mixed };
+  }
+
+  /**
    * Ensure a given interface is an untagged member of `vlanId` in the bridge
    * VLAN table. Looks up which bridge the interface belongs to, then either
    * updates an existing VLAN entry or creates a new one.

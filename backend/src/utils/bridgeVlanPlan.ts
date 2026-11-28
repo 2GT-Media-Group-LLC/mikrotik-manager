@@ -198,7 +198,13 @@ export function planAccessRemovals(
   rows: BridgeVlanTableRow[],
   bridge: string,
   port: string,
-  pvid: number
+  pvid: number,
+  /**
+   * Leave the port's tagged VLANs alone and only take it out of other VLANs'
+   * untagged lists: a radio whose SSID VLAN changes may still carry tagged
+   * VLANs over a wireless link.
+   */
+  opts: { keepTagged?: boolean } = {}
 ): TaggedRemovalPlan {
   const plan: TaggedRemovalPlan = { writes: [], mixed: [] };
   for (const row of rows) {
@@ -209,7 +215,7 @@ export function planAccessRemovals(
     const vids = expandVlanIds(row['vlan-ids']);
     const coversPvid = vids.includes(pvid);
     const onlyPvid = coversPvid && vids.length === 1;
-    const leaveTagged = tagged.includes(port) && !onlyPvid;
+    const leaveTagged = !opts.keepTagged && tagged.includes(port) && !onlyPvid;
     const leaveUntagged = untagged.includes(port) && !coversPvid;
     if (!leaveTagged && !leaveUntagged) continue;
     if (coversPvid) {
