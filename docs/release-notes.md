@@ -7,6 +7,18 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.40
+
+Released on Friday 27 November 2026. One fix.
+
+- **Turning on VLAN filtering on a new device warns instead of predicting a lost connection.**
+  On a default config the bridge's VLAN table is empty and every port is on PVID 1. Change Guard
+  showed turning on VLAN filtering in red, as cutting management. RouterOS adds VLAN 1 from the
+  PVIDs, so management keeps working, but only through that automatic entry. It's now a warning
+  that says which entry to add first: VLAN 1 with the bridge and the port management arrives on
+  as untagged members. A management port on another PVID, or one that takes only tagged frames,
+  is still shown in red.
+
 ## 1.0.39
 
 Released on Friday 27 November 2026. Two fixes.
