@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1042" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.42
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1041" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1929,6 +1940,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1042" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.42
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1041" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2477,6 +2499,15 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1042">1.0.42<a class="headerlink" href="#1042" title="Permanent link">&para;</a></h2>
+<p>Released on Saturday 28 November 2026. One fix.</p>
+<ul>
+<li><strong>Adopting a device reports its result instead of a false failure.</strong> The page gave up on the
+  adoption after 30 seconds, and a static adoption takes about that long, so it could report a
+  failure just before the device was registered, and the device then showed up anyway. The page
+  now waits up to four minutes, which also covers DHCP adoptions that wait for a lease. When the
+  device doesn't answer ping or rejects the password, the backend log now says so.</li>
+</ul>
 <h2 id="1041">1.0.41<a class="headerlink" href="#1041" title="Permanent link">&para;</a></h2>
 <p>Released on Saturday 28 November 2026. One fix.</p>
 <ul>
