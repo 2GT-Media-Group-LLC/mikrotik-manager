@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1040" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.40
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1039" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1907,6 +1918,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1040" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.40
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1039" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2433,6 +2455,17 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1040">1.0.40<a class="headerlink" href="#1040" title="Permanent link">&para;</a></h2>
+<p>Released on Friday 27 November 2026. One fix.</p>
+<ul>
+<li><strong>Turning on VLAN filtering on a new device warns instead of predicting a lost connection.</strong>
+  On a default config the bridge's VLAN table is empty and every port is on PVID 1. Change Guard
+  showed turning on VLAN filtering in red, as cutting management. RouterOS adds VLAN 1 from the
+  PVIDs, so management keeps working, but only through that automatic entry. It's now a warning
+  that says which entry to add first: VLAN 1 with the bridge and the port management arrives on
+  as untagged members. A management port on another PVID, or one that takes only tagged frames,
+  is still shown in red.</li>
+</ul>
 <h2 id="1039">1.0.39<a class="headerlink" href="#1039" title="Permanent link">&para;</a></h2>
 <p>Released on Friday 27 November 2026. Two fixes.</p>
 <ul>
