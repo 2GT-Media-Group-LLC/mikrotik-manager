@@ -268,6 +268,10 @@ beta, sent a fix or reported a problem:
 - [@schmitt330](https://github.com/schmitt330): device tools on RouterOS 6.
 - [@orshih6](https://github.com/orshih6): a security report on the release workflow.
 
+## 1.1.0-rc.15
+
+The fix in 1.0.42 below: adopting a device reports its result instead of a false failure.
+
 ## 1.1.0-rc.14
 
 The fix in 1.0.41 below: changing only an SSID's VLAN ID in Wireless Settings applies it.
@@ -1535,6 +1539,16 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.42
+
+Released on Saturday 28 November 2026. One fix.
+
+- **Adopting a device reports its result instead of a false failure.** The page gave up on the
+  adoption after 30 seconds, and a static adoption takes about that long, so it could report a
+  failure just before the device was registered, and the device then showed up anyway. The page
+  now waits up to four minutes, which also covers DHCP adoptions that wait for a lease. When the
+  device doesn't answer ping or rejects the password, the backend log now says so.
 
 ## 1.0.41
 
