@@ -84,13 +84,49 @@ Before 0.24.51 the database password was part of a connection URL, so a password
 
 ## First login
 
-A new install has one account, **admin** with the password **admin**. Signing in with it
+By default, a new install has one account, **admin** with the password **admin**. Signing in with it
 goes straight to a page that asks for a new password (at least 10 characters and at most
 72 bytes, with a letter and a number); nothing else works until it is set. The 72-byte limit
 is bcrypt's: it ignores anything longer, so a longer password changed only at the end would
 still accept the old one. The login page shows the
 default credentials only until then. An existing install still using admin/admin gets
 the same prompt at its next login.
+
+To sign in immediately with your own password on a fresh database, set
+either `INITIAL_ADMIN_PASSWORD` or `INITIAL_ADMIN_PASSWORD_FILE` in the backend environment.
+Use the password policy above. Setting both variables, pointing to an unreadable file,
+or supplying an empty or invalid password stops the first startup.
+
+For Kubernetes, mount a Secret as a read-only volume in the backend container. For example,
+mount it at `/run/secrets/bootstrap` with a key named `admin-password`, then set
+`INITIAL_ADMIN_PASSWORD_FILE=/run/secrets/bootstrap/admin-password` in the backend
+container's environment. The backend reads the file as UTF-8 and removes one final
+LF or CRLF if present. Spaces and other characters are preserved.
+
+For Compose, put your password in `.env` between single quotes so Compose preserves
+literal `$` characters and any leading or trailing spaces. Replace the example value
+with your own password. [Compose `.env` syntax](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/#env-file-syntax)
+
+```dotenv
+INITIAL_ADMIN_PASSWORD=' example$Word42 '
+```
+
+Pass the password to the backend with an override file such as `compose.bootstrap.yml`.
+
+```yaml
+services:
+  backend:
+    environment:
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?Set INITIAL_ADMIN_PASSWORD}
+```
+
+Start with `docker compose -f docker-compose.yml -f compose.bootstrap.yml up -d`
+(use `docker-compose.ghcr.yml` in place of `docker-compose.yml` for prebuilt images).
+
+The backend reads these settings only when creating the first admin account. Once that
+account exists, you can remove the Kubernetes Secret mount and its environment variable,
+or remove the password from `.env` and start Compose without the override. Change the
+password in the app to rotate it.
 
 ## Time display
 

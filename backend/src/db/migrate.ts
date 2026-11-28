@@ -1,6 +1,8 @@
+import { readFile } from 'node:fs/promises';
 import { pool } from '../config/database';
 import bcrypt from 'bcryptjs';
 import { backfillProxyConnections } from '../services/ProxyLogService';
+import { validatePassword } from '../utils/passwordPolicy';
 
 const MIGRATION_SQL = `
 -- Users
@@ -2211,6 +2213,29 @@ const DEFAULT_SETTINGS = [
   { key: 'docs_link_enabled', value: true },
 ];
 
+async function getInitialAdminPassword(): Promise<string | undefined> {
+  const { INITIAL_ADMIN_PASSWORD: password, INITIAL_ADMIN_PASSWORD_FILE: passwordFile } = process.env;
+  if (passwordFile !== undefined && password !== undefined) {
+    throw new Error('Set only one of INITIAL_ADMIN_PASSWORD and INITIAL_ADMIN_PASSWORD_FILE');
+  }
+
+  let value = password;
+  let source = 'INITIAL_ADMIN_PASSWORD';
+  if (passwordFile !== undefined) {
+    source = 'INITIAL_ADMIN_PASSWORD_FILE';
+    try {
+      value = (await readFile(passwordFile, 'utf8')).replace(/\r?\n$/, '');
+    } catch {
+      throw new Error('Could not read the file specified by INITIAL_ADMIN_PASSWORD_FILE');
+    }
+  }
+  if (value !== undefined) {
+    const error = validatePassword(value);
+    if (error) throw new Error(`Invalid ${source}: ${error}`);
+  }
+  return value;
+}
+
 export async function runMigrations(): Promise<void> {
   console.log('Running database migrations...');
   const client = await pool.connect();
@@ -2245,16 +2270,21 @@ export async function runMigrations(): Promise<void> {
     );
     if (adopted.rowCount) console.log(`Assigned ${adopted.rowCount} device(s) to the default site`);
 
-    // Create default admin user if no users exist
+    // Bootstrap the admin account only when no users exist.
     const userCount = await client.query('SELECT COUNT(*) FROM users');
     if (parseInt(userCount.rows[0].count, 10) === 0) {
-      const hash = await bcrypt.hash('admin', 12);
-      await client.query(
-        `INSERT INTO users (username, password_hash, role, must_change_password) VALUES ($1, $2, $3, TRUE)`,
-        ['admin', hash, 'admin']
+      const password = await getInitialAdminPassword();
+      const mustChange = password === undefined;
+      const hash = await bcrypt.hash(password ?? 'admin', 12);
+      const seeded = await client.query(
+        `INSERT INTO users (username, password_hash, role, must_change_password) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (username) DO NOTHING`,
+        ['admin', hash, 'admin', mustChange]
       );
-      console.log('Default admin user created (username: admin, password: admin)');
-      console.log('The password must be changed at first login.');
+      if (seeded.rowCount) {
+        console.log('Initial admin account created');
+        if (mustChange) console.log('The default password must be changed at first login.');
+      }
     }
 
     // Existing installs still on admin/admin get the same forced change. Checked
