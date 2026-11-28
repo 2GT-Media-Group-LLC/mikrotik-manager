@@ -268,7 +268,10 @@ export class DeviceAdoptionService {
 
       const ping = await client.execute('/ping', { address: candidate.address, count: '3' }, [], { timeoutMs: 20000 });
       const recv = Number((ping[ping.length - 1] || {}).received || 0);
-      if (recv === 0) return { ok: false, steps, error: `${candidate.address} did not answer ping from ${jump.name}` };
+      if (recv === 0) {
+        note(`reached ${candidate.address}`, false, '0/3 replies');
+        return { ok: false, steps, error: `${candidate.address} did not answer ping from ${jump.name}` };
+      }
       note(`reached ${candidate.address}`, true, `${recv}/3 replies`);
 
       const headers = fetchAuthHeader(req.username || 'admin', req.password);
@@ -278,6 +281,7 @@ export class DeviceAdoptionService {
       // wrong sticker password fails harmlessly instead of part-way through.
       const probe = await rest({ method: 'get', path: 'system/resource', describe: 'authenticate' });
       if (!probe.ok) {
+        note('authenticated to target', false, probe.error);
         return {
           ok: false, steps,
           error: 'Could not authenticate to the device. Check the password printed on the unit.',
