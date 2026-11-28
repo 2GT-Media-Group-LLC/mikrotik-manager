@@ -302,6 +302,48 @@ describe('analyzeChange — enabling vlan-filtering', () => {
     expect(v.severity).toBe('critical');
     expect(v.violations.map((x) => x.id)).toContain('bridge-untagged-member');
   });
+
+  // A new device's default config: nothing in the bridge's VLAN table yet, and
+  // every port on PVID 1. RouterOS adds VLAN 1 from the PVIDs, so this warns
+  // to add it first rather than predicting a cut.
+  const fresh = (over: Partial<DeviceSnapshot> = {}) => baseSnapshot({
+    bridges: [{ name: 'bridge', 'vlan-filtering': 'false' }],
+    bridgePorts: [
+      { interface: 'sfp28-1', bridge: 'bridge', pvid: '1', disabled: 'false' },
+      { interface: 'ether1', bridge: 'bridge', pvid: '1', disabled: 'false' },
+    ],
+    bridgeVlans: [],
+    ...over,
+  });
+
+  it('warns, not critical, on a default config with an empty VLAN table', () => {
+    const v = analyzeChange(fresh(), device, { kind: 'bridge.vlan-filtering', bridge: 'bridge', enabled: true });
+    expect(v.severity).toBe('warning');
+    expect(v.violations).toHaveLength(1);
+    expect(v.violations[0]).toMatchObject({ id: 'bridge-untagged-member', severity: 'warning' });
+    expect(v.violations[0].detail).toMatch(/Add VLAN 1 with bridge and sfp28-1 untagged first/);
+  });
+
+  it('stays critical when the management port is on another PVID', () => {
+    const v = analyzeChange(fresh({
+      bridgePorts: [{ interface: 'sfp28-1', bridge: 'bridge', pvid: '20', disabled: 'false' }],
+    }), device, { kind: 'bridge.vlan-filtering', bridge: 'bridge', enabled: true });
+    expect(v.severity).toBe('critical');
+  });
+
+  it('stays critical when the management port admits only tagged frames', () => {
+    const v = analyzeChange(fresh({
+      bridgePorts: [{ interface: 'sfp28-1', bridge: 'bridge', pvid: '1', 'frame-types': 'admit-only-vlan-tagged', disabled: 'false' }],
+    }), device, { kind: 'bridge.vlan-filtering', bridge: 'bridge', enabled: true });
+    expect(v.severity).toBe('critical');
+  });
+
+  it('is safe once VLAN 1 is added with the bridge and the management port', () => {
+    const v = analyzeChange(fresh({
+      bridgeVlans: [{ bridge: 'bridge', 'vlan-ids': '1', tagged: '', untagged: 'bridge,sfp28-1', dynamic: 'false' }],
+    }), device, { kind: 'bridge.vlan-filtering', bridge: 'bridge', enabled: true });
+    expect(v.severity).toBe('safe');
+  });
 });
 
 describe('analyzeChange — other management-path cuts', () => {
